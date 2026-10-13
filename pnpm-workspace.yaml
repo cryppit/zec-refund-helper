@@ -1,0 +1,4 @@
+# pnpm settings for this single package (no workspace packages, no catalog). esbuild (via tsx and vitest) runs its
+# install script to pick its native binary, as in the monorepo this was extracted from.
+allowBuilds:
+  esbuild: true
