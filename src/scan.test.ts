@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { cursorAt } from "./core/scan.js";
 import { renderScanText } from "./render-scan.js";
-import { accountExists, mergeSegments, pacedFetch, scanCandidates, walkSegment, type WalkResult } from "./scan.js";
+import { accountExists, indexerStatus, mergeSegments, pacedFetch, scanCandidates, walkSegment, type WalkResult } from "./scan.js";
 
 const fx = (name: string): string => readFileSync(new URL(`./fixtures/btc-refund/${name}`, import.meta.url), "utf8");
 const json = (body: string, status = 200): Response => new Response(body, { status, headers: { "content-type": "application/json" } });
@@ -17,6 +17,8 @@ const STUCK = "9deffb31135e3cdf6a62088d8639166673fe91c0e150fd9c80f6e61bba2bec39"
 /** A real 0.0004 ZEC deposit below the minimum, in zcash-connector's unavailable_utxos (fixtures shared with btc-refund.test.ts). */
 const ABSORBED = "a2d0906efe45369db596bc83cf270426a471942d9af45bf20bbb96aa633e3320";
 const CREDITED = "c1e3acff9638f650659926de4797431d79495bb4319c436522e24d2899a0c662";
+/** A bridge payout to a NEAR→BTC withdrawal that landed on another bridge deposit address: one Bitcoin transaction, two indexer records. */
+const SHARED = "4b58625fac892c047ffe1ee06dd8a612703349b9d4b6c76ce784a682ed0daeb1";
 const T0 = 0x6aca0000;
 const T1 = 0x6acb0000;
 const T2 = 0x6acc0000;
@@ -33,7 +35,8 @@ function recordedFetch(calls: string[] = []): typeof fetch {
     if (url === `${API}/transfers?limit=50&cursor=${(JSON.parse(fx("scan-page-1.json")) as { next_cursor: string }).next_cursor}`) return json(fx("scan-page-2.json"));
     if (url === `${API}/transfers?limit=50&cursor=${cursorAt(T1)}`) return json(fx("scan-page-3.json"));
     if (url === `${API}/transfers/transfer?utxo_chain=Btc&utxo_tx_hash=${STUCK}&utxo_vout=0`) return json(fx("scan-status-stuck.json"));
-    if (url === `${API}/transfers/transfer?utxo_chain=Btc&utxo_tx_hash=${CREDITED}&utxo_vout=0`) return json(JSON.stringify({ transfers: [{ status: "FinalisedOnNear" }] }));
+    if (url === `${API}/transfers/transfer?utxo_chain=Btc&utxo_tx_hash=${SHARED}&utxo_vout=0`) return json(fx("scan-status-shared-tx.json"));
+    if (url === `${API}/transfers/transfer?utxo_chain=Btc&utxo_tx_hash=${CREDITED}&utxo_vout=0`) return json(JSON.stringify({ transfers: [{ transfer_id: { type: "utxo", chain: "Btc", tx_hash: CREDITED, vout: 0 }, origin_chain: "Btc", destination_chain: "Near", status: "FinalisedOnNear" }] }));
     if (url.startsWith("https://api.coingecko.com/")) return json(fx("scan-prices.json"));
     if (url === `https://api.blockchair.com/zcash/dashboards/transaction/${ABSORBED}`) return json(fx("zec-absorbed-tx.json"));
     if (url === `https://api.blockchair.com/zcash/raw/transaction/${ABSORBED}`) return json(fx("zec-absorbed-raw.json"));
@@ -179,5 +182,12 @@ describe("accountExists", () => {
   it("tells an existing NEAR account from a missing one", async () => {
     expect(await accountExists(recordedFetch(), "intents.near")).toBe(true);
     expect(await accountExists(recordedFetch(), "no-such-account-zzz.near")).toBe(false);
+  });
+});
+
+describe("indexerStatus", () => {
+  it("reads the deposit's own record when the Bitcoin transaction also finalised a withdrawal (4b58625f…@0, recorded 2026-10-14)", async () => {
+    // The indexer lists the NEAR→BTC withdrawal (Settled) first and the BTC→NEAR deposit (Initialised) second.
+    expect(await indexerStatus(recordedFetch(), "btc", SHARED, 0)).toBe("Initialised");
   });
 });

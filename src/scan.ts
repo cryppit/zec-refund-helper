@@ -289,13 +289,22 @@ export async function accountExists(f: typeof fetch, accountId: string, rpc: str
   return null;
 }
 
-/** The indexer's current status for one deposit; null if it does not list it. */
+/**
+ * The indexer's current status for one deposit; null if it does not list it. A Bitcoin or Zcash transaction can carry
+ * several records (a bridge payout that lands on another deposit address is a withdrawal and a deposit at once), so
+ * only the record for this coin coming from its UTXO chain counts.
+ */
 export async function indexerStatus(f: typeof fetch, chain: UtxoChain, txid: string, vout: number): Promise<string | null> {
   const res = await f(`${INDEXER_API}/api/v4/transfers/transfer?utxo_chain=${CHAIN_PARAM[chain]}&utxo_tx_hash=${txid}&utxo_vout=${vout}`);
   if (res.status === 404) return null;
   const body: unknown = await res.json().catch(() => null);
-  const t = isObj(body) && Array.isArray(body["transfers"]) ? body["transfers"][0] : null;
-  return isObj(t) && typeof t["status"] === "string" ? t["status"] : null;
+  const transfers = isObj(body) && Array.isArray(body["transfers"]) ? body["transfers"].filter(isObj) : [];
+  const deposit = transfers.find((t) => {
+    const id = isObj(t["transfer_id"]) ? t["transfer_id"] : {};
+    const sameCoin = id["type"] !== "utxo" || (String(id["tx_hash"]).toLowerCase() === txid.toLowerCase() && Number(id["vout"]) === vout);
+    return t["origin_chain"] === CHAIN_PARAM[chain] && sameCoin;
+  });
+  return deposit && typeof deposit["status"] === "string" ? deposit["status"] : null;
 }
 
 export async function usdPrices(f: typeof fetch): Promise<ScanReport["prices"]> {

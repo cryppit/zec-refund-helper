@@ -39,7 +39,8 @@ bridge's deposits. The scan combines the three public sources that can:
 1. **The bridge indexer's transfer list** (`mainnet.api.bridge.nearone.org/api/v4/transfers`). This is the only
    public list of deposits to the bridge's per-user addresses. It records every deposit the indexer sees to an
    address it handed out, with a status: `Initialised` once seen on Bitcoin or Zcash; `Finalised` once credited on
-   NEAR (or `FinalisedOnNear` for a deposit to `omni.bridge.near` whose NEAR leg is done). The list is cursor-paged by
+   NEAR (or `FinalisedOnNear` for a deposit to `omni.bridge.near` whose NEAR leg is done; the fast-finalised pair when
+   a relayer paid ahead), and `Settled`, the terminal state. The list is cursor-paged by
    a MongoDB ObjectId whose first 4 bytes are the insertion time, so the scan starts one cursor per UTC day and reads
    the 111 days in parallel (8 workers). Pages that neighbouring days share are counted once. It read
    **27,044 pages, 1,352,177 transfers**, of which **255,494 Bitcoin and 35,905 Zcash deposits**. The first record in
@@ -104,8 +105,11 @@ Other limits:
   never verified it. The connector's legacy entry points (`verify_deposit`, `safe_verify_deposit`, …) are paused on
   `btc-connector` (`get_metadata` → `pa_all_paused`), but current deposits are credited through
   `verify_deposit_v2`, which is not paused. So the pause alone does not explain them.
-- One Bitcoin row, `4b58625f…@0` (0.00011069 BTC), shows `Settled` on the fresh indexer look-up. The contract and the
-  chain still show it uncredited and unspent, so it is counted, but the indexer may know about a payout we cannot see.
+- One Bitcoin row, `4b58625f…@0` (0.00011069 BTC), is a bridge payout that landed on a deposit address: a NEAR→BTC
+  withdrawal from `intents.near` was paid to an address the bridge had handed out for deposits. The indexer lists two
+  records for that transaction, the withdrawal (`Settled`) and the new deposit (`Initialised`). The deposit was never
+  credited, and the contract and the chain show its coin unspent, so it is counted. (The first scan read the
+  withdrawal's status for it; the look-up now reads the deposit's own record.)
 - The refund-address column reflects the deposit message where the indexer knows it. "none" means the message names
   no refund address, or the indexer has no message. The requester then names an address and the 14-day lock applies.
 - USD values use one spot price per coin at the snapshot time.

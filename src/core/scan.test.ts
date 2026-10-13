@@ -84,6 +84,10 @@ describe("isCreditedStatus", () => {
   it("Finalised and FinalisedOnNear (the NEAR leg of an onward Omni transfer) are credited; Initialised is not", () => {
     expect(["Finalised", "FinalisedOnNear", "Initialised"].map(isCreditedStatus)).toEqual([true, true, false]);
   });
+
+  it("the v4 statuses past signing count too: fast-finalised (a relayer paid ahead) and Settled, the terminal state; Signed does not", () => {
+    expect(["FastFinalisedOnNear", "FastFinalised", "Settled", "Signed"].map(isCreditedStatus)).toEqual([true, true, true, false]);
+  });
 });
 
 describe("stuckCause", () => {

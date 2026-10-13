@@ -86,11 +86,11 @@ them, then locked ones, then executed ones.
 
 1. **Enumerate.** Deposit addresses are derived per deposit message, so the chain alone cannot list them. The only
    public list is the bridge indexer's transfer list (`/api/v4/transfers`), which records every deposit it sees to
-   an address it handed out, with its status (`Initialised` when seen on Bitcoin or Zcash, `Finalised` once credited
-   on NEAR). The list is paged by a MongoDB ObjectId cursor that starts with the insertion time, so the scan reads it
+   an address it handed out, with its status (`Initialised` when seen on Bitcoin or Zcash, `Finalised` and then
+   `Settled` once credited on NEAR). The list is paged by a MongoDB ObjectId cursor that starts with the insertion time, so the scan reads it
    as one-day segments in parallel. The list starts on 2026-06-25.
 2. **Add** every refund request on both connectors (`get_refund_requests_paged`), which reach back before that date.
-3. **Check** each deposit not `Finalised`, and each requested one, with the same code as `zec-refund <txid>`: a fresh
+3. **Check** each deposit not yet credited, and each requested one, with the same code as `zec-refund <txid>`: a fresh
    indexer look-up, the transaction on the chain, the contract's own derived address, the bridge's UTXO set, the
    spend, the refund request, and whether the NEAR account in the deposit message exists.
 4. **Classify** each uncredited one: `pending` (inside the 6-hour crediting window, not counted as stuck),

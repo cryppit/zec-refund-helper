@@ -36,10 +36,13 @@ export interface IndexedDeposit {
 }
 
 /**
- * Statuses that mean the deposit was credited on NEAR: `Finalised`, and `FinalisedOnNear` (a deposit to
- * `omni.bridge.near` for an onward Omni transfer whose NEAR leg is done; the record carries that NEAR transaction).
+ * Statuses that mean the deposit was credited on NEAR: `Finalised`; `FinalisedOnNear` (a deposit to `omni.bridge.near`
+ * for an onward Omni transfer whose NEAR leg is done; the record carries that NEAR transaction); the fast-finalised
+ * pair (a relayer paid the recipient ahead of finalisation); and `Settled`, the v4 terminal state. Only `Initialised`
+ * and `Signed` are not credited (bridge-indexer-rs OpenAPI `TransferStatusV4`, read 2026-10-14).
  */
-export const isCreditedStatus = (status: string): boolean => status === "Finalised" || status === "FinalisedOnNear";
+const CREDITED: ReadonlySet<string> = new Set(["Finalised", "FinalisedOnNear", "FastFinalisedOnNear", "FastFinalised", "Settled"]);
+export const isCreditedStatus = (status: string): boolean => CREDITED.has(status);
 
 export interface TransfersPage {
   records: number;
