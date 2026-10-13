@@ -2,7 +2,8 @@
 
 import type { BtcDepositReport } from "./btc-refund.js";
 import { describeDuration } from "./core/duration.js";
-import { UTXO_CHAINS, type BoardRow } from "./core/btc-refund.js";
+import { refundPath, UTXO_CHAINS, type BoardRow, type BtcDepositFacts, type UtxoChain } from "./core/btc-refund.js";
+import { classifyZcashAddress, describeZcashAddress } from "./core/zcash-address.js";
 
 type Report = Exclude<BtcDepositReport, { error: string }>;
 
@@ -11,6 +12,55 @@ const CHECKER = "Where's My Swap (https://wheres-my-swap.higgsfield.app)";
 
 const day = (sec: number): string => new Date(sec * 1000).toISOString().slice(0, 10);
 const when = (sec: number): string => new Date(sec * 1000).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+const coins = (sat: number): string => (sat / 1e8).toFixed(8);
+
+/** "the Ironwood shielded pool", "the Sapling and Orchard shielded pools", "a shielded pool". */
+function poolName(f: BtcDepositFacts): string {
+  const p = f.funding.pools;
+  if (p.length === 0) return "a shielded pool";
+  return `the ${p.join(" and ")} shielded pool${p.length > 1 ? "s" : ""}`;
+}
+
+function fromWhom(f: BtcDepositFacts): string {
+  if (f.funding.kind === "shielded") return `${poolName(f)} (no transparent sender)`;
+  const t = f.senders.join(", ") || "?";
+  return f.funding.kind === "mixed" ? `${t} and ${poolName(f)}` : t;
+}
+
+/** The address, and for Zcash what kind it is. */
+const named = (chain: UtxoChain, address: string): string => (chain === "zcash" ? `${address}, ${describeZcashAddress(classifyZcashAddress(address))}` : address);
+
+/** For Zcash: which refund the connector can make to this address, and why a shielded one needs the Orchard bundle. */
+function zcashRefundLines(address: string): string[] {
+  const a = classifyZcashAddress(address);
+  const path = refundPath("zcash", address);
+  if (path === "none") {
+    return [
+      `The Zcash connector cannot pay ${describeZcashAddress(a)}: a refund is either one transparent output or an Orchard bundle, and this address has neither a transparent nor an Orchard receiver. A refund request to it would be accepted but could never be executed, so ask the Omni bridge team for help instead of paying for one.`,
+    ];
+  }
+  if (path === "transparent") return ["A transparent refund: execute_refund pays this address one ordinary output (bridge-cli --transparent)."];
+  const why =
+    "The contract cannot write a shielded output by itself: an Orchard output needs a zero-knowledge proof made off-chain. So bridge-cli builds the Orchard bundle (the proof, the encrypted note, the exact amount) and passes it to execute_refund; the contract checks that it pays this address's Orchard receiver the deposit minus the fee, then NEAR's MPC network signs the deposit input. The refund lands in the shielded pool (the Ironwood pool since NU6.3), so the amount and your address stay out of the transparent chain; the deposit itself was already public.";
+  if (a.refund.transparent) return [`This address also has a transparent receiver. bridge-cli refunds to its Orchard receiver by default (shielded); --transparent pays its transparent receiver instead, in public. ${why}`];
+  return [`This address has no transparent receiver, so the refund must be shielded: execute_refund without a bundle would try a transparent output and fail. ${why}`];
+}
+
+function feeLine(r: Report, amountSat: number, feeSat: number, stored: boolean): string {
+  const { unit, minor } = UTXO_CHAINS[r.facts.chain];
+  const why = stored ? "fee stored on the request" : r.facts.chain === "zcash" ? "refund fee (the ZIP-317 minimum the Zcash connector charges)" : "refund fee (the connector's max_btc_gas_fee)";
+  return `A refund returns ${coins(amountSat - feeSat)} ${unit}: the deposit minus the ${feeSat}-${minor.replace(/s$/, "")} ${why}.`;
+}
+
+/** Where a requested refund goes, what it returns, and (Zcash) which execute_refund it needs. */
+function requestLines(r: Report, refundTo: string): string[] {
+  const q = r.facts.request;
+  const lines = [`The bridge can only send it to ${named(r.facts.chain, refundTo)}.`];
+  if (q) lines.push(feeLine(r, q.amountSat, q.gasFeeSat, true));
+  if (r.facts.chain === "zcash") lines.push(...zcashRefundLines(refundTo));
+  return lines;
+}
+
 function headline(r: Report): string[] {
   const v = r.verdict;
   const f = r.facts;
@@ -30,20 +80,36 @@ function headline(r: Report): string[] {
     case "crediting":
       return [`CREDITING  not credited yet, which is normal in the first hours; if nothing changes by ${when(v.stuckAfterSec)}, check again for the refund steps.`];
     case "requested":
-      return [`REFUND REQUESTED  the lock ends on ${when(v.unlocksAtSec)}; after that anyone can execute it.`, `The bridge can only send it to ${v.refundTo}.`];
+      return [`REFUND REQUESTED  the lock ends on ${when(v.unlocksAtSec)}; after that anyone can execute it.`, ...requestLines(r, v.refundTo)];
     case "ready":
       return [
         `READY TO REFUND  the refund was requested on ${day(f.request?.createdAtSec ?? v.unlockedAtSec)} and its lock ended on ${day(v.unlockedAtSec)}; nobody has executed it yet.`,
-        `The bridge can only send it to ${v.refundTo}.`,
+        ...requestLines(r, v.refundTo),
       ];
     case "executed":
       return [`REFUND EXECUTED  waiting for the bridge to sign the ${name} refund to ${v.refundTo} and broadcast it.`];
     case "refundable": {
       const lines = [`STUCK  confirmed ${day(f.confirmedAtSec ?? 0)} and never credited on NEAR. The bridge's own refund can send it back.`];
       if (v.belowMinimum) lines.push(`It is below the bridge's ${r.config.minDepositSat}-${minor.replace(/s$/, "")} minimum deposit, which is likely why it was never credited.`);
-      if (v.tooSmall) lines.push(`It is smaller than the refund's ${name} fee (up to ${r.config.maxGasFeeSat} ${minor}), so a refund would return nothing.`);
-      else if (v.refundTo === null) lines.push("Several wallets funded this transaction, so we cannot tell which is yours; the refund address has to be named by the depositor (bridge-cli --refund-address).");
-      else lines.push(v.refundToFromDeposit ? `The deposit names its refund address: ${v.refundTo}.` : `The deposit names no refund address; the refund would go to the wallet that sent it: ${v.refundTo}.`);
+      if (v.tooSmall) {
+        lines.push(`It is not larger than the refund fee (${v.feeSat} ${minor}), so the contract would refuse a refund request.`);
+        return lines;
+      }
+      if (v.refundTo === null && v.noTransparentSender) {
+        lines.push(
+          `This deposit came from ${poolName(f)}, so it has no transparent sender, and it names no refund address. You name the address in the request: use one you control, ideally your own unified address with an Orchard receiver so the refund stays shielded (a Sapling-only zs1 address cannot be refunded by this contract). The contract cannot check that the address is yours, so this takes the ${Math.round(v.lockSec / 86_400)}-day lock, during which the bridge's DAO or operator can reject a false claim.`,
+        );
+      } else if (v.refundTo === null) {
+        lines.push(`Several wallets funded this transaction, so we cannot tell which is yours; the refund address has to be named by the depositor (bridge-cli --refund-address).`);
+      } else {
+        lines.push(
+          v.refundToFromDeposit
+            ? `The deposit names its refund address: ${named(f.chain, v.refundTo)}.`
+            : `The deposit names no refund address; the refund would go to the wallet that sent it: ${named(f.chain, v.refundTo)}.`,
+        );
+        if (f.chain === "zcash") lines.push(...zcashRefundLines(v.refundTo));
+      }
+      lines.push(feeLine(r, f.amountSat, v.feeSat, false));
       return lines;
     }
   }
@@ -54,7 +120,7 @@ export function renderBtcRefundText(r: Report): string {
   const { name, unit, connector } = UTXO_CHAINS[f.chain];
   const lines: string[] = [];
   lines.push(`${`${name} deposit`.padEnd(18)}${f.txid} (output ${f.vout})`);
-  lines.push(`                  ${(f.amountSat / 1e8).toFixed(8)} ${unit} from ${f.senders.join(", ") || "?"} to ${f.depositAddress}${f.confirmedAtSec ? `, confirmed ${when(f.confirmedAtSec)}` : ""}`);
+  lines.push(`                  ${coins(f.amountSat)} ${unit} from ${fromWhom(f)} to ${f.depositAddress}${f.confirmedAtSec ? `, confirmed ${when(f.confirmedAtSec)}` : ""}`);
   if (r.orderAccount) lines.push(`For NEAR account  ${r.orderAccount}`);
   lines.push("");
   lines.push(...headline(r));

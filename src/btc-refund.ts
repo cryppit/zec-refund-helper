@@ -14,9 +14,12 @@ import {
   type BtcDepositFacts,
   type BtcDepositVerdict,
   type DepositMsg,
+  type Funding,
+  refundFeeFor,
   type RefundConfig,
   type RefundRequestRow,
   type RefundStep,
+  type ShieldedPool,
   UTXO_CHAINS,
   type UtxoChain,
 } from "./core/btc-refund.js";
@@ -26,11 +29,15 @@ export interface BtcTx {
   outputs: { address: string | null; valueSat: number }[];
   senders: string[];
   inputs: number;
+  /** Where the coins came from (Zcash: transparent inputs and/or a shielded pool). */
+  funding: Funding;
 }
 
 export interface BtcRefundClient {
   readonly chain: UtxoChain;
   tx(txid: string): Promise<BtcTx | null>;
+  /** The same, plus where its coins came from (Zcash: one more read, for the shielded pools). */
+  depositTx(txid: string): Promise<BtcTx | null>;
   /** The transaction that spent this output, if any. */
   spentBy(txid: string, vout: number): Promise<string | null>;
   /** The bridge indexer's deposit message for a deposit address; null: not a deposit address it tracks. */
@@ -46,6 +53,7 @@ export interface BtcRefundClient {
 
 const MEMPOOL = "https://mempool.space/api";
 const BLOCKCHAIR = "https://api.blockchair.com/zcash/dashboards/transaction/";
+const BLOCKCHAIR_RAW = "https://api.blockchair.com/zcash/raw/transaction/";
 const INDEXER = "https://mainnet.api.bridge.nearone.org/api/v3/utxo/get_deposit_message";
 const NEAR_RPC = "https://rpc.mainnet.fastnear.com";
 
@@ -111,6 +119,7 @@ export function publicBtcRefundClient(fetchImpl: typeof fetch = fetch, rpc: stri
       outputs: arr(tx["vout"]).map((o) => ({ address: isObj(o) ? str(o["scriptpubkey_address"]) : null, valueSat: isObj(o) ? num(o["value"]) : 0 })),
       senders,
       inputs: arr(tx["vin"]).length,
+      funding: { kind: "transparent", pools: [] },
     };
   }
 
@@ -121,7 +130,33 @@ export function publicBtcRefundClient(fetchImpl: typeof fetch = fetch, rpc: stri
     return isObj(data) && isObj(data[txid]) ? (data[txid] as Record<string, unknown>) : null;
   }
 
-  async function blockchairTx(txid: string): Promise<BtcTx | null> {
+  /**
+   * Which shielded pools paid into the transaction. Blockchair's dashboard has Sprout (`join_split_raw`) and Sapling
+   * (`shielded_value_delta`, `shielded_input_raw`) but no Orchard or Ironwood fields (a v5/v6 transaction funded from
+   * Orchard or Ironwood shows 0 inputs, 0 fee and a 0 delta there), so we read the node's decoded transaction too: the
+   * value balance of each pool (positive: value leaving that pool into the transparent outputs) and Sprout's vpub_new.
+   */
+  async function shieldedPools(txid: string, dashboard: Record<string, unknown>): Promise<ShieldedPool[]> {
+    const pools = new Set<ShieldedPool>();
+    const body = await getJson(`${BLOCKCHAIR_RAW}${txid}`).catch(() => null);
+    const data = isObj(body) && isObj(body["data"]) ? body["data"][txid] : null;
+    const raw = isObj(data) && isObj(data["decoded_raw_transaction"]) ? data["decoded_raw_transaction"] : null;
+    if (raw) {
+      if (arr(raw["vjoinsplit"]).some((j) => isObj(j) && num(j["vpub_newZat"] ?? j["vpub_new"]) > 0)) pools.add("Sprout");
+      if (num(raw["valueBalanceZat"]) > 0) pools.add("Sapling");
+      for (const [key, pool] of [["orchard", "Orchard"], ["ironwood", "Ironwood"]] as const) {
+        const b = raw[key];
+        if (isObj(b) && num(b["valueBalanceZat"]) > 0) pools.add(pool);
+      }
+    }
+    const t = isObj(dashboard["transaction"]) ? dashboard["transaction"] : {};
+    if (arr(t["join_split_raw"]).length > 0) pools.add("Sprout");
+    if (num(t["shielded_value_delta"]) > 0 || arr(t["shielded_input_raw"]).length > 0) pools.add("Sapling");
+    const order: ShieldedPool[] = ["Sprout", "Sapling", "Orchard", "Ironwood"];
+    return order.filter((p) => pools.has(p));
+  }
+
+  async function blockchairTx(txid: string, withFunding = false): Promise<BtcTx | null> {
     const d = await blockchairDashboard(txid);
     const t = d && isObj(d["transaction"]) ? d["transaction"] : null;
     if (!d || !t) return null;
@@ -135,11 +170,20 @@ export function publicBtcRefundClient(fetchImpl: typeof fetch = fetch, rpc: stri
       .sort((a, b) => num(a["index"]) - num(b["index"]))
       .map((o) => ({ address: str(o["recipient"]), valueSat: num(o["value"]) }));
     const time = str(t["time"]);
+    const inputs = num(t["input_count"]);
+    let funding: Funding = { kind: "transparent", pools: [] };
+    if (withFunding && t["is_coinbase"] !== true) {
+      const pools = await shieldedPools(txid, d);
+      // No transparent input and not a coinbase: the value can only have come out of a shielded pool.
+      if (inputs === 0) funding = { kind: "shielded", pools };
+      else if (pools.length > 0) funding = { kind: "mixed", pools };
+    }
     return {
       confirmedAtSec: num(t["block_id"]) > 0 && time ? Date.parse(`${time.replace(" ", "T")}Z`) / 1000 : null,
       outputs,
       senders,
-      inputs: num(t["input_count"]),
+      inputs,
+      funding,
     };
   }
 
@@ -165,6 +209,7 @@ export function publicBtcRefundClient(fetchImpl: typeof fetch = fetch, rpc: stri
             createdAtSec: num(r["created_at_sec"]),
             executed: r["executed"] === true,
             msgHasRefundAddress: hasRefundAddress(r["deposit_msg_json"]),
+            gasFeeSat: num(r["gas_fee"]),
           },
         });
       }
@@ -174,7 +219,8 @@ export function publicBtcRefundClient(fetchImpl: typeof fetch = fetch, rpc: stri
 
   return {
     chain,
-    tx: chain === "btc" ? mempoolTx : blockchairTx,
+    tx: chain === "btc" ? mempoolTx : (txid) => blockchairTx(txid),
+    depositTx: chain === "btc" ? mempoolTx : (txid) => blockchairTx(txid, true),
     async spentBy(txid, vout) {
       if (chain === "zcash") return blockchairSpentBy(txid, vout);
       const o = await getJson(`${MEMPOOL}/tx/${txid}/outspend/${vout}`);
@@ -203,6 +249,7 @@ export function publicBtcRefundClient(fetchImpl: typeof fetch = fetch, rpc: stri
         unsafeRefundTimelockSec: num(c["unsafe_refund_timelock_sec"]),
         minDepositSat: num(c["min_deposit_amount"]),
         maxGasFeeSat: num(c["max_btc_gas_fee"]),
+        refundFeeSat: refundFeeFor(chain, num(c["max_btc_gas_fee"])),
         requestDepositYocto: BigInt(String(request)),
         executeDepositYocto: BigInt(String(execute)),
       };
@@ -229,7 +276,7 @@ async function findDeposit(tx: BtcTx, client: BtcRefundClient, vout?: number): P
 /** The first chain that knows the hash, with its transaction. */
 async function locate(txid: string, clients: BtcRefundClient[]): Promise<{ client: BtcRefundClient; tx: BtcTx } | null> {
   for (const client of clients) {
-    const tx = await client.tx(txid).catch(() => null);
+    const tx = await client.depositTx(txid).catch(() => null);
     if (tx) return { client, tx };
   }
   return null;
@@ -269,6 +316,7 @@ export async function btcDepositFacts(raw: string, clients: BtcRefundClient | Bt
     bridgeHolds: held,
     spentBy: spender ? { txid: spender, inputs: spendTx?.inputs ?? 0, paysTo: (spendTx?.outputs ?? []).flatMap((o) => (o.address ? [o.address] : [])) } : null,
     request,
+    funding: tx.funding,
   };
   return { facts, client };
 }

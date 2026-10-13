@@ -2,7 +2,21 @@
 // stuck, and if stuck, how its sender gets it back through the bridge's own refund (request, timelock, execute).
 import { describe, expect, it } from "vitest";
 
-import { btcDepositVerdict, isCredited, receiverOf, refundBoard, refundSteps, type BtcDepositFacts, type RefundConfig, type RefundRequestRow } from "./btc-refund.js";
+import {
+  btcDepositVerdict,
+  isCredited,
+  receiverOf,
+  refundBoard,
+  refundFeeFor,
+  refundPath,
+  refundSteps,
+  zip317Fee,
+  ZCASH_REFUND_FEE_ZAT,
+  type BtcDepositFacts,
+  type Funding,
+  type RefundConfig,
+  type RefundRequestRow,
+} from "./btc-refund.js";
 
 const NEAR = 10n ** 24n;
 /** The live mainnet config read on 2026-10-13. */
@@ -11,9 +25,12 @@ const CONFIG: RefundConfig = {
   unsafeRefundTimelockSec: 1_209_600,
   minDepositSat: 2_500,
   maxGasFeeSat: 5_000,
+  refundFeeSat: 5_000,
   requestDepositYocto: 2n * NEAR,
   executeDepositYocto: 1n * NEAR,
 };
+/** The live zcash-connector.bridge.near config read on 2026-10-13 (v0.9.7-rc.3). */
+const ZCONFIG: RefundConfig = { ...CONFIG, minDepositSat: 100_000, maxGasFeeSat: 1_000_000, refundFeeSat: 10_000 };
 
 const ORDER = "f3de655c605a4ca01e000e7961a969687678efaf3bd6c6dff13cea3cb50ab807";
 const SENDER = "bc1qyp0a54gjhej46zdztq5w0ux2waqg3kacls7q2t";
@@ -32,6 +49,7 @@ const facts = (over: Partial<BtcDepositFacts> = {}): BtcDepositFacts => ({
   bridgeHolds: false,
   spentBy: null,
   request: null,
+  funding: { kind: "transparent", pools: [] },
   ...over,
 });
 const withRefundAddress = { recipient_id: "intents.near", safe_deposit: { msg: `{"receiver_id":"${ORDER}"}` }, refund_address: SENDER };
@@ -81,6 +99,8 @@ describe("btcDepositVerdict", () => {
       lockSec: 172_800,
       belowMinimum: false,
       tooSmall: false,
+      feeSat: 5_000,
+      noTransparentSender: false,
     });
   });
 
@@ -95,7 +115,7 @@ describe("btcDepositVerdict", () => {
   });
 
   it("follows a refund request through its timelock to ready, executed and refunded", () => {
-    const request = { refundAddress: SENDER, amountSat: 9_997_900, createdAtSec: 1_787_161_227, executed: false, msgHasRefundAddress: false };
+    const request = { refundAddress: SENDER, amountSat: 9_997_900, createdAtSec: 1_787_161_227, executed: false, msgHasRefundAddress: false, gasFeeSat: 5_000 };
     const unlocks = 1_787_161_227 + 1_209_600;
     expect(btcDepositVerdict(facts({ request }), CONFIG, unlocks - DAY)).toEqual({ state: "requested", refundTo: SENDER, unlocksAtSec: unlocks });
     expect(btcDepositVerdict(facts({ request }), CONFIG, unlocks + 40 * DAY)).toEqual({ state: "ready", refundTo: SENDER, unlockedAtSec: unlocks });
@@ -105,7 +125,7 @@ describe("btcDepositVerdict", () => {
   });
 
   it("uses the 2-day lock for a request whose deposit named its refund address", () => {
-    const request = { refundAddress: SENDER, amountSat: 9_997_900, createdAtSec: 1_787_161_227, executed: false, msgHasRefundAddress: true };
+    const request = { refundAddress: SENDER, amountSat: 9_997_900, createdAtSec: 1_787_161_227, executed: false, msgHasRefundAddress: true, gasFeeSat: 5_000 };
     expect(btcDepositVerdict(facts({ msg: withRefundAddress, request }), CONFIG, 1_787_161_227)).toEqual({ state: "requested", refundTo: SENDER, unlocksAtSec: 1_787_161_227 + 172_800 });
   });
 });
@@ -151,17 +171,17 @@ describe("refundSteps", () => {
   });
 
   it("once the lock has passed: only execute and sign remain", () => {
-    const request = { refundAddress: SENDER, amountSat: 9_997_900, createdAtSec: 1_787_161_227, executed: false, msgHasRefundAddress: false };
+    const request = { refundAddress: SENDER, amountSat: 9_997_900, createdAtSec: 1_787_161_227, executed: false, msgHasRefundAddress: false, gasFeeSat: 5_000 };
     const f = facts({ request });
     const steps = refundSteps(f, btcDepositVerdict(f, CONFIG, 1_790_000_000), CONFIG);
     expect(steps.map((s) => s.title)).toEqual(["Execute the refund (1 NEAR)", "Have the bridge sign the Bitcoin refund"]);
   });
 
   it("a Zcash deposit gets the Zcash connector and bridge-cli's --chain zcash", () => {
-    const f = facts({ chain: "zcash", msg: withRefundAddress, senders: ["t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1"] });
+    const f = facts({ chain: "zcash", msg: { ...withRefundAddress, refund_address: T_ADDR }, senders: [T_ADDR] });
     const steps = refundSteps(f, btcDepositVerdict(f, CONFIG, CONFIRMED + DAY), CONFIG);
     expect(steps[0]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain zcash --btc-tx-hash ${TXID} --vout 0`);
-    expect(steps[2]?.command).toContain("as-transaction zcash-connector.bridge.near execute_refund");
+    expect(steps[2]?.command).toBe(`bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${TXID} --vout 0 --transparent`);
     expect(steps[3]).toMatchObject({ title: "Have the bridge sign the Zcash refund", command: "bridge-cli mainnet near-sign-btc-transaction --chain zcash --btc-pending-id <btc_pending_id from the execute_refund logs>" });
   });
 
@@ -172,7 +192,7 @@ describe("refundSteps", () => {
 });
 
 describe("refundBoard", () => {
-  const request = (over: Partial<RefundRequestRow>): RefundRequestRow => ({ refundAddress: SENDER, amountSat: 1_000_000, createdAtSec: 1_000_000, executed: false, msgHasRefundAddress: true, ...over });
+  const request = (over: Partial<RefundRequestRow>): RefundRequestRow => ({ refundAddress: SENDER, amountSat: 1_000_000, createdAtSec: 1_000_000, executed: false, msgHasRefundAddress: true, gasFeeSat: 5_000, ...over });
   const configs = { btc: CONFIG, zcash: CONFIG };
 
   it("lists every open refund request: ready ones first (longest wait first), then locked, then executed", () => {
@@ -194,5 +214,137 @@ describe("refundBoard", () => {
     ]);
     expect(rows[0]).toMatchObject({ chain: "btc", vout: 0, unlocksAtSec: 900_000 + 172_800, readyForSec: 1_600_000 - 900_000 - 172_800, refundTo: SENDER });
     expect(rows[2]).toMatchObject({ chain: "zcash", vout: 1, unlocksAtSec: 1_500_000 + 1_209_600, readyForSec: 0 });
+  });
+});
+
+// ---------- Zcash: the refund fee, shielded refunds and shielded-funded deposits ----------
+
+const T_ADDR = "t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1";
+/** Real refund addresses from mainnet deposit messages (deposits 04dc643f… and 477f3d00…, 2026-10). */
+const UA_ORCHARD_SAPLING =
+  "u1egfcnx27m4406w892hrp96n8akl66juj8pn0agqa2w2zrylpmq5yurssz0tlq3k4rmhag7y6kljezxp6me4j3h03ezs0tzrqynz2tdcnwenqqepl85f6qcxekcjv60wheqyyt5lk560t0m3tx7y2zqzwr56wr9fg76dumq08jspxmncv";
+/** Synthetic: the Sapling receiver of a ZIP-316 test vector, encoded as a zs1 address. */
+const SAPLING = "zs1mrhc9y7jdh5r9ece8u5khgvj9kg0zgkxzdduyv0whkg7lkcrkx5xqem3e48avjq9wn2rukydkwn";
+const UA_ORCHARD_ONLY = "u1r9ffm4hq7q2xcv4mwfhd0mpe0aw22klu9zxzsyr7shkx5rh77s0u3vpuc0vjchh7hvczldd8mwxgcydzyluhtd4h0zejlc5p5qzn5wn0";
+/** ZIP-316 test vector: P2PKH + Orchard receivers. */
+const UA_T_AND_ORCHARD = "u1snf9yr883aj2hm8pksp9aymnqdwzy42rpzuffevj35hhxeckays5pcpeq7vy2mtgzlcuc4mnh9443qnuyje0yx6h59angywka4v2ap6kchh2j96ezf9w0c0auyz3wwts2lx5gmk2sk9";
+const ZTX = "04dc643f8a1d19baf476178d01eac8fc553700e36f849df91e46924fa3f2cae6";
+const zfacts = (over: Partial<BtcDepositFacts> = {}): BtcDepositFacts =>
+  facts({ chain: "zcash", txid: ZTX, amountSat: 5_000_000_000, depositAddress: "t1RTEogVdgA8cWY8zm1uomj5ThPZnbp8BB4", senders: [T_ADDR], ...over });
+
+describe("the Zcash refund fee", () => {
+  it("is the ZIP-317 minimum for a one-input refund, as the contract computes it: 10,000 zatoshis either way", () => {
+    // Transparent: 1 P2PKH input, 1 P2PKH output. Shielded: 1 input, no transparent output, 1 Orchard/Ironwood action.
+    expect(zip317Fee({ transparentInputs: 1, transparentOutputs: 1, orchardActions: 0 })).toBe(10_000);
+    expect(zip317Fee({ transparentInputs: 1, transparentOutputs: 0, orchardActions: 1 })).toBe(10_000);
+    expect(zip317Fee({ transparentInputs: 1, transparentOutputs: 0, orchardActions: 3 })).toBe(20_000);
+    expect(ZCASH_REFUND_FEE_ZAT).toBe(10_000);
+  });
+
+  it("is the connector's max_btc_gas_fee on Bitcoin and the ZIP-317 minimum on Zcash (not Zcash's 0.01 ZEC max_btc_gas_fee)", () => {
+    expect(refundFeeFor("btc", 5_000)).toBe(5_000);
+    expect(refundFeeFor("zcash", 1_000_000)).toBe(10_000);
+  });
+
+  it("a Zcash deposit between the fee and 0.01 ZEC is refundable (it used to be called too small)", () => {
+    const v = btcDepositVerdict(zfacts({ amountSat: 50_000 }), ZCONFIG, CONFIRMED + DAY);
+    expect(v).toMatchObject({ state: "refundable", belowMinimum: true, tooSmall: false, feeSat: 10_000 });
+    expect(refundSteps(zfacts({ amountSat: 50_000 }), v, ZCONFIG).map((s) => s.title)[0]).toBe("Request the refund (2 NEAR, not returned)");
+  });
+
+  it("the contract needs the fee to be less than the deposit: 10,000 zatoshis or less cannot be refunded", () => {
+    expect(btcDepositVerdict(zfacts({ amountSat: 10_000 }), ZCONFIG, CONFIRMED + DAY)).toMatchObject({ tooSmall: true });
+    expect(btcDepositVerdict(zfacts({ amountSat: 10_001 }), ZCONFIG, CONFIRMED + DAY)).toMatchObject({ tooSmall: false });
+  });
+});
+
+describe("refundPath: which execute_refund the connector can build for an address", () => {
+  it("Bitcoin is always transparent", () => {
+    expect(refundPath("btc", SENDER)).toBe("transparent");
+  });
+
+  it("Zcash: an Orchard receiver gets the shielded bundle; a t-address the transparent refund; Sapling-only nothing", () => {
+    expect(refundPath("zcash", UA_ORCHARD_ONLY)).toBe("shielded");
+    expect(refundPath("zcash", UA_ORCHARD_SAPLING)).toBe("shielded");
+    expect(refundPath("zcash", UA_T_AND_ORCHARD)).toBe("shielded");
+    expect(refundPath("zcash", T_ADDR)).toBe("transparent");
+    expect(refundPath("zcash", SAPLING)).toBe("none");
+    expect(refundPath("zcash", "not an address")).toBe("none");
+  });
+});
+
+describe("refundSteps for Zcash refunds", () => {
+  it("a unified address with an Orchard receiver: bridge-cli btc-execute-refund builds the Orchard bundle by default", () => {
+    const f = zfacts({ msg: { ...withRefundAddress, refund_address: UA_ORCHARD_ONLY } });
+    const steps = refundSteps(f, btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY), ZCONFIG);
+    expect(steps.map((s) => s.title)).toEqual([
+      "Request the refund (2 NEAR, not returned)",
+      "Wait 2 days for the timelock",
+      "Execute the refund, shielded (1 NEAR)",
+      "Have the bridge sign the Zcash refund",
+    ]);
+    expect(steps[2]?.command).toBe(`bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${ZTX} --vout 0`);
+    expect(steps[2]?.note).toContain("Orchard bundle");
+    expect(steps[2]?.note).not.toContain("--transparent");
+  });
+
+  it("a unified address with both an Orchard and a transparent receiver: shielded by default, --transparent offered", () => {
+    const f = zfacts({ msg: { ...withRefundAddress, refund_address: UA_T_AND_ORCHARD } });
+    const steps = refundSteps(f, btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY), ZCONFIG);
+    expect(steps[2]?.command).not.toContain("--transparent");
+    expect(steps[2]?.note).toContain("--transparent");
+  });
+
+  it("a t-address: the transparent refund (--transparent; the shielded default would fail with no Orchard receiver)", () => {
+    const f = zfacts({ msg: { ...withRefundAddress, refund_address: T_ADDR } });
+    const steps = refundSteps(f, btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY), ZCONFIG);
+    expect(steps[2]).toMatchObject({ title: "Execute the refund, transparent (1 NEAR)", command: `bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${ZTX} --vout 0 --transparent` });
+  });
+
+  it("a ready request to a unified address: execute shielded, with the fee stored on the request", () => {
+    const request = { refundAddress: UA_ORCHARD_SAPLING, amountSat: 5_000_000_000, createdAtSec: CONFIRMED, executed: false, msgHasRefundAddress: true, gasFeeSat: 10_000 };
+    const f = zfacts({ msg: { ...withRefundAddress, refund_address: UA_ORCHARD_SAPLING }, request });
+    const v = btcDepositVerdict(f, ZCONFIG, CONFIRMED + 3 * DAY);
+    expect(v.state).toBe("ready");
+    const steps = refundSteps(f, v, ZCONFIG);
+    expect(steps[0]?.command).toBe(`bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${ZTX} --vout 0`);
+  });
+
+  it("a deposit whose refund address is Sapling-only (synthetic): no commands, the connector cannot pay it", () => {
+    const f = zfacts({ msg: { ...withRefundAddress, refund_address: SAPLING } });
+    const v = btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY);
+    expect(v).toMatchObject({ state: "refundable", refundTo: f.msg?.refund_address });
+    expect(refundSteps(f, v, ZCONFIG)).toEqual([]);
+  });
+});
+
+describe("a Zcash deposit funded from a shielded pool", () => {
+  const shielded: Funding = { kind: "shielded", pools: ["Ironwood"] };
+
+  it("with the deposit's own refund address (as real 1Click deposits carry): that address, no sender needed", () => {
+    const f = zfacts({ senders: [], funding: shielded, msg: { ...withRefundAddress, refund_address: UA_ORCHARD_SAPLING } });
+    expect(btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY)).toMatchObject({ state: "refundable", refundTo: UA_ORCHARD_SAPLING, refundToFromDeposit: true, noTransparentSender: true, lockSec: 172_800 });
+  });
+
+  it("synthetic, no refund address in the deposit: no sender to suggest; the depositor names their own address (14-day lock)", () => {
+    const f = zfacts({ senders: [], funding: shielded });
+    const v = btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY);
+    expect(v).toMatchObject({ state: "refundable", refundTo: null, refundToFromDeposit: false, noTransparentSender: true, lockSec: 1_209_600 });
+    const steps = refundSteps(f, v, ZCONFIG);
+    expect(steps.map((s) => s.title)).toEqual([
+      "Request the refund to your own address (2 NEAR, not returned)",
+      "Wait 14 days for the timelock",
+      "Execute the refund, shielded (1 NEAR)",
+      "Have the bridge sign the Zcash refund",
+    ]);
+    expect(steps[0]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain zcash --btc-tx-hash ${ZTX} --vout 0 --refund-address <your own unified address (u1…) with an Orchard receiver>`);
+    expect(steps[0]?.note).toContain("cannot check that the address is yours");
+  });
+
+  it("several transparent senders still get no suggestion and no commands", () => {
+    const f = zfacts({ senders: [T_ADDR, "t1other"] });
+    const v = btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY);
+    expect(v).toMatchObject({ refundTo: null, noTransparentSender: false });
+    expect(refundSteps(f, v, ZCONFIG)).toEqual([]);
   });
 });

@@ -15,6 +15,16 @@ describe("live: Bitcoin and Zcash deposits through the Omni bridge", () => {
     expect(r.verdict.state).toBe("credited");
   });
 
+  it("a Zcash deposit from 2026-10-13 funded from the Ironwood pool: no transparent sender, a unified refund address", async () => {
+    const r = await checkBtcDeposit("04dc643f8a1d19baf476178d01eac8fc553700e36f849df91e46924fa3f2cae6", publicUtxoRefundClients(), now());
+    if ("error" in r) throw new Error(r.error);
+    expect(r.facts).toMatchObject({ chain: "zcash", senders: [], funding: { kind: "shielded", pools: ["Ironwood"] } });
+    expect(r.facts.msg?.refund_address).toMatch(/^u1/);
+    expect(r.config.refundFeeSat).toBe(10_000);
+    // Credited on 2026-10-13; the bridge may since have spent the coin in its own transaction (still credited).
+    expect(r.verdict.state).toBe("credited");
+  });
+
   it("the Bitcoin deposit stuck since 2026-08-19: never credited, its refund requested for the sending wallet", async () => {
     const r = await checkBtcDeposit("9deffb31135e3cdf6a62088d8639166673fe91c0e150fd9c80f6e61bba2bec39", publicBtcRefundClient(), now());
     if ("error" in r) throw new Error(r.error);
