@@ -100,6 +100,7 @@ describe("renderBtcRefundText for Zcash", () => {
     expect(text).toContain("came from the Ironwood shielded pool, so it has no transparent sender");
     expect(text).toContain("--refund-address <your own unified address (u1…) with an Orchard receiver>");
     expect(text).toContain("14 days");
+    expect(text).toContain("the coin can only go to the address named in the request.");
   });
 
   it("a transparent t-address refund: execute with --transparent", () => {

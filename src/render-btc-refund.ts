@@ -41,7 +41,7 @@ function zcashRefundLines(address: string): string[] {
   }
   if (path === "transparent") return ["A transparent refund: execute_refund pays this address one ordinary output (bridge-cli --transparent)."];
   const why =
-    "The contract cannot write a shielded output by itself: an Orchard output needs a zero-knowledge proof made off-chain. So bridge-cli builds the Orchard bundle (the proof, the encrypted note, the exact amount) and passes it to execute_refund; the contract checks that it pays this address's Orchard receiver the deposit minus the fee, then NEAR's MPC network signs the deposit input. The refund lands in the shielded pool (the Ironwood pool since NU6.3), so the amount and your address stay out of the transparent chain; the deposit itself was already public.";
+    "The contract cannot write a shielded output by itself: an Orchard output needs a zero-knowledge proof made off-chain. So bridge-cli builds the Orchard bundle (the proof, the encrypted note, the exact amount) and passes it to execute_refund; the contract checks that it pays this address's Orchard receiver the deposit minus the fee, then NEAR's MPC network signs the deposit input. The refund lands in the shielded pool (the Ironwood pool since NU6.3): your address and what you do next with the ZEC stay off the transparent chain. The deposit and the refunded amount stay visible, as value entering a shielded pool always is.";
   if (a.refund.transparent) return [`This address also has a transparent receiver. bridge-cli refunds to its Orchard receiver by default (shielded); --transparent pays its transparent receiver instead, in public. ${why}`];
   return [`This address has no transparent receiver, so the refund must be shielded: execute_refund without a bundle would try a transparent output and fail. ${why}`];
 }
@@ -126,7 +126,8 @@ export function renderBtcRefundText(r: Report): string {
   lines.push(...headline(r));
   if (r.steps.length) {
     lines.push("");
-    lines.push("What is left. Sign each step with your own NEAR account; anyone can pay these fees, and the coin can only go to the address above.");
+    const where = r.verdict.state === "refundable" && r.verdict.refundTo === null ? "the address named in the request" : "the address above";
+    lines.push(`What is left. Sign each step with your own NEAR account; anyone can pay these fees, and the coin can only go to ${where}.`);
     r.steps.forEach((s, i) => {
       lines.push(`${i + 1}. ${s.title}`);
       if (s.command) lines.push(`   ${s.command}`);
