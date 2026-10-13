@@ -22,21 +22,60 @@ calls, and who the coin can go back to. This tool reads all of that from public 
 
 Given a 64-hex transaction hash, it:
 
-1. Looks the hash up on Zcash (Blockchair) and then on Bitcoin (mempool.space). Both are keyless public APIs.
+1. Looks the hash up on Zcash (Blockchair) and then on Bitcoin (mempool.space). Both are keyless public APIs. For a
+   Zcash deposit it also reads the node's decoded transaction to see whether it was funded from a shielded pool
+   (Sprout, Sapling, Orchard or Ironwood). Blockchair's dashboard alone shows an Orchard- or Ironwood-funded
+   transaction as 0 inputs, 0 fee and a 0 shielded delta.
 2. For each output, asks the Omni bridge indexer for the deposit message behind that address, then checks the
    indexer's answer against the connector contract itself (`get_user_deposit_address`), so it does not rely on the indexer alone.
 3. Reads from the connector over NEAR RPC (FastNEAR): whether the bridge holds the coin (`list_utxos`,
-   `list_unavailable_utxos`), any refund request (`get_refund_requests_paged`), and the live config: timelocks,
-   minimum deposit, refund fee cap and the NEAR deposits that `request_refund` and `execute_refund` need.
+   `list_unavailable_utxos`), any refund request (`get_refund_requests_paged`, with the fee stored on it), and the live
+   config: timelocks, minimum deposit and the NEAR deposits that `request_refund` and `execute_refund` need. The
+   Zcash refund fee is the contract's own ZIP-317 minimum (10,000 zatoshis for a one-input refund, transparent or
+   shielded), not the 0.01 ZEC `max_btc_gas_fee` cap.
 4. Checks on the UTXO chain whether the deposit output was spent and, if so, whether that spend was the refund
    (it spends only that coin and pays only the refund address).
 5. Gives one verdict: `unconfirmed`, `not_a_deposit`, `credited`, `crediting` (first 6 hours), `refundable` (stuck),
    `requested` (in its timelock), `ready` (lock passed, nobody executed it), `executed` (waiting for the MPC signature)
    or `refunded`.
-6. For a stuck deposit, prints the commands left to run, with live fees and timelocks:
-   **request** (`bridge-cli … btc-request-refund`), then **wait for the lock**, then **execute** (`execute_refund`,
-   which anyone may call), then **sign** (`bridge-cli … near-sign-btc-transaction`: NEAR's MPC network signs the Zcash
-   refund transaction and the bridge's relayer broadcasts it).
+6. Classifies the refund address (ZIP-316 parsing, no dependencies: Bech32m, F4Jumble with BLAKE2b, the receiver
+   typecodes; tested against the official zcash-test-vectors): a transparent t-address, a TEX address, a unified
+   address and its receivers (Orchard, Sapling, transparent), or a Sapling or Sprout z-address.
+7. For a stuck deposit, prints the commands left to run, with live fees and timelocks:
+   **request** (`bridge-cli … btc-request-refund`), then **wait for the lock**, then **execute**, then **sign**
+   (`bridge-cli … near-sign-btc-transaction`: NEAR's MPC network signs the Zcash refund transaction and the bridge's
+   relayer broadcasts it). On Zcash, execute is `bridge-cli mainnet btc-execute-refund --chain zcash`:
+   - to a unified address with an Orchard receiver, bridge-cli's default builds an **Orchard bundle** and the refund
+     is shielded (since NU6.3 it lands in the Ironwood pool);
+   - to a t-address, `--transparent` pays one ordinary output;
+   - to an address with neither an Orchard nor a transparent receiver (a Sapling `zs1…` address, for example) the
+     connector cannot pay at all, and the tool says so instead of printing commands.
+
+### Why a shielded refund needs the Orchard bundle
+
+The connector refunds by building a Zcash transaction that spends the deposit, and NEAR's MPC network signs its
+transparent input. A transparent output is just a script the contract can write. An Orchard output cannot be written
+by a contract: it needs a note encrypted to the recipient and a zero-knowledge proof, and those are made off-chain.
+So for a shielded-only address (no transparent receiver) `bridge-cli` builds the Orchard bundle, proof included, paying
+exactly the deposit minus the stored fee, and passes it to `execute_refund`. The contract checks that the bundle pays
+the request's address's Orchard receiver and that amount, and only then puts the transaction up for signing. Without
+the bundle, `execute_refund` tries a transparent output, and for an address with no transparent receiver it fails.
+On 2026-10-13 we sampled 11 real shielded-funded ZEC deposits to the connector: all 11 name a unified refund address
+with no transparent receiver (7 Orchard-only, 4 Orchard + Sapling). For them a shielded refund is the only refund,
+so this is the normal case, not an edge case.
+
+### Deposits funded from a shielded pool
+
+On 2026-10-13, 40 of the 104 newest coins the Zcash connector held came from transactions with no transparent input
+at all: the ZEC came out of the Ironwood pool straight to the bridge deposit address. Such a deposit has no
+transparent sender. The tool says so and:
+
+- if the deposit message names a refund address (the real ones we found all do, a unified address), uses that one;
+- if it does not, it explains that the depositor names their own address in the request, ideally their own unified
+  address with an Orchard receiver so the refund stays shielded. It prints the request with a placeholder
+  (`--refund-address <your own unified address …>`), never an address of its own choosing. Nobody can prove from the
+  chain that a named address belongs to the depositor, which is why this path has the 14-day lock and the bridge's DAO
+  or operator can reject a false claim during it.
 
 `zec-refund --board` lists every refund request on both connectors, ready ones first with how long nobody has executed
 them, then locked ones, then executed ones.
@@ -48,7 +87,8 @@ them, then locked ones, then executed ones.
   connector contract sends it back.
 - **Refund only to the original sender.** The tool only ever suggests the refund address written into the deposit
   itself, or, if the deposit names none, the single transparent address that funded it. If several addresses
-  funded it, it suggests nothing. The contract enforces the deposit's own `refund_address` when one is set. When none
+  funded it, it suggests nothing. If it was funded from a shielded pool with no refund address, it explains how the
+  depositor names their own address and prints a placeholder, never an address. The contract enforces the deposit's own `refund_address` when one is set. When none
   is set, the requester names the address, the longer 14-day lock applies, and the bridge's DAO or operator can reject a
   false claim during that lock. Once requested, the refund can only go to the address in the request.
 - **The user signs.** Every step is a NEAR transaction the user signs with their own NEAR account, through
@@ -82,22 +122,32 @@ CREDITED  the bridge took this deposit in; ...
 Tests:
 
 ```bash
-pnpm test        # unit tests and recorded-payload tests (no network)
+pnpm test        # unit tests, ZIP-316 test vectors and recorded-payload tests (no network)
 pnpm typecheck
 pnpm test:live   # on demand: the same checks against the real public endpoints
 ```
 
+## Checked against the deployed contract
+
+The deployed `zcash-connector.bridge.near` reports version `0.9.7-rc.3`, and its code hash
+(`4gG1v7fB1DYRozVKArT2PAV8UmjzxHRoFKuN78LBYpEW`) equals the SHA-256 of `zcash_bridge_release.wasm` in the
+Near-One/btc-bridge GitHub release `btc-bridge-v0.9.7-rc3` (tag commit `d2140ec`, 2026-09-19). So the refund paths,
+the fee and the address rules above were read from the exact source that is deployed, not from `omni-main`
+(0.9.6). Its view methods (`get_config`, `get_metadata`, `get_refund_requests_paged`, `required_balance_for_*`)
+return the fields that source defines.
+
 ## Limitations
 
-- **Transparent only.** The tool reads transparent Zcash data: the deposit's `t1…` address and its transparent
-  senders. A deposit funded from a shielded pool has no transparent sender. Today the tool then suggests no refund
-  address, and its message wrongly says several wallets funded the transaction.
-- **Transparent refund command.** The `execute_refund` command it prints sends no Orchard bundle, so it makes a
-  transparent refund. The contract and `bridge-cli` can also refund to a unified address with an Orchard receiver
-  (see SUBMISSION.md, "Improvements"). This tool does not guide that yet.
-- **Zcash refund fee.** For "too small to refund", the tool compares the deposit to the connector's `max_btc_gas_fee`
-  (0.01 ZEC on Zcash). Per the contract source (Near-One/btc-bridge `main`), a Zcash refund request defaults to the much smaller ZIP-317 minimum
-  fee, so a small Zcash deposit can be called unrefundable when it is not.
+- **The bundle is built by bridge-cli, not by this tool.** The tool prints the command; building an Orchard bundle
+  needs a Zcash prover (librustzcash's `orchard` crate) that we do not reimplement.
+- **The Zcash refund fee is computed, not read.** No view method returns the default refund fee, so the tool
+  computes the contract's ZIP-317 formula (10,000 zatoshis). Once a request exists it uses the `gas_fee` stored on
+  it. A fee set by the DAO or operator at request time is only visible after the request.
+- **Sapling-only addresses.** The deployed connector cannot refund to a Sapling `zs1…` address, or to a unified
+  address with neither an Orchard nor a transparent receiver, but `request_refund` does not check the address. The
+  tool warns; it cannot stop someone from paying for such a request.
+- **Mixed funding.** A deposit funded by transparent inputs and a shielded pool together is reported as such; the
+  tool still only suggests a single transparent sender, as for a transparent deposit.
 - **Third-party read APIs.** Blockchair, mempool.space, the Omni bridge indexer and FastNEAR are public, keyless
   services. Their terms of use have not been reviewed. Rate limits or outages show up as errors.
 - **"Stuck" is a heuristic.** A deposit counts as stuck 6 hours after confirmation with no credit.
