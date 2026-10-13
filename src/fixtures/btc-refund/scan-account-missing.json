@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","error":{"name":"HANDLER_ERROR","cause":{"info":{"block_hash":"89h6msFdzSJ7n5MmyEcw2ZSDKy1LPrzvtRe8ABMsXmbf","block_height":219835642,"requested_account_id":"no-such-account-zzz.near"},"name":"UNKNOWN_ACCOUNT"},"code":-32000,"message":"Server error","data":"account no-such-account-zzz.near does not exist while viewing"},"id":1}

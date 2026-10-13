@@ -1,6 +1,6 @@
 # Architecture
 
-Five modules and no runtime dependencies.
+Eight modules and no runtime dependencies.
 
 | File | Role |
 |---|---|
@@ -8,7 +8,10 @@ Five modules and no runtime dependencies.
 | `src/core/zcash-address.ts` | Pure Zcash address parsing with no dependencies: Base58Check (own SHA-256), Bech32/Bech32m, ZIP-316 unified addresses (F4Jumble with own BLAKE2b, typecode items), and `classifyZcashAddress`: kind, receivers, and which refund the connector can build to it. |
 | `src/btc-refund.ts` | I/O. `publicBtcRefundClient(fetch, rpc, chain)` reads Blockchair (Zcash: the transaction dashboard, and for the deposit the node's decoded transaction for the shielded pools that funded it) or mempool.space (Bitcoin), the Omni bridge indexer and the connector's view methods over NEAR RPC. `checkBtcDeposit` collects the facts and asks the core for a verdict; `checkRefundBoard` builds the board. |
 | `src/render-btc-refund.ts` | Plain-text report and board. |
-| `src/cli.ts` | `zec-refund <txid> [--vout N] [--json]`, `zec-refund --board`. |
+| `src/core/scan.ts` | Pure scan logic: the indexer's ObjectId cursors and time segments, `parseTransfersPage`, `stuckCause` (pending, below_minimum, bad_message, unknown), `scanRow` (refund status, refundable now, refund-address kind, funding), `summarize` (totals, ages, oldest, ready refunds, Zcash shielded counts). |
+| `src/scan.ts` | I/O for the scan: `pacedFetch` (per-host spacing, retry with backoff, per-run cache), `walkIndexer` (the transfer list in parallel one-day segments, finished days cached on disk), `scanCandidates` (each uncredited deposit and each refund request through `btcDepositFacts`, plus `view_account` and CoinGecko prices). |
+| `src/render-scan.ts` | Plain-text scan report. |
+| `src/cli.ts` | `zec-refund <txid> [--vout N] [--json]`, `zec-refund --board`, `zec-refund --scan [--json] [--since] [--cache] [--progress] [--concurrency]`. |
 
 ## Flow
 
@@ -23,6 +26,7 @@ flowchart TD
   F --> G[UTXO chain: was the output spent, and by what]
   G --> H[core: btcDepositVerdict]
   H --> V1[credited / crediting / refunded]
+  H --> V5[absorbed: below the minimum,<br/>in unavailable_utxos, no refund path]
   H --> V2[refundable: stuck]
   H --> V3[requested: in timelock]
   H --> V4[ready / executed]
@@ -76,4 +80,6 @@ trimmed (hex, proofs, signatures and ciphertexts removed). Cases with no real ex
 shielded-funded deposit, a Sapling refund address) are built from real data with one field changed and say
 "synthetic" in the test name. `src/core/zcash-address.test.ts` runs the ZIP-316 F4Jumble and unified-address vectors
 from zcash/zcash-test-vectors (`src/fixtures/zip316/vectors.json`, a subset). `src/btc-refund.live.test.ts` runs the same
-checks against the live endpoints, on demand.
+checks against the live endpoints, on demand. `src/scan.test.ts` walks three trimmed pages of the indexer's real
+transfer list (the test sets the cursors so two segments share a page) and checks the stuck 0.1 BTC deposit
+`9deffb31…@0` end to end; `src/core/scan.test.ts` covers the causes, the refund states and the totals.

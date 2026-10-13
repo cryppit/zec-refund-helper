@@ -44,10 +44,15 @@ export interface BtcRefundClient {
   depositMsg(address: string): Promise<DepositMsg | null>;
   /** The deposit address the contract derives from a message. */
   depositAddress(msg: DepositMsg): Promise<string>;
+  /** The coin is in the bridge's UTXO set (credited). */
   bridgeHolds(utxoKey: string): Promise<boolean>;
+  /** The coin is in the bridge's `unavailable_utxos` (verified below the minimum: nothing minted, no refund path). */
+  bridgeAbsorbed(utxoKey: string): Promise<boolean>;
   refundRequest(utxoKey: string): Promise<RefundRequestRow | null>;
   /** Every refund request the connector holds. */
   refundRequests(): Promise<{ key: string; request: RefundRequestRow }[]>;
+  /** Every coin in the connector's `unavailable_utxos` (deposits verified below the minimum), all time. */
+  unavailableUtxos(): Promise<{ key: string; balanceSat: number }[]>;
   config(): Promise<RefundConfig>;
 }
 
@@ -217,8 +222,20 @@ export function publicBtcRefundClient(fetchImpl: typeof fetch = fetch, rpc: stri
     }
   }
 
+  async function allUnavailable(): Promise<{ key: string; balanceSat: number }[]> {
+    const PAGE = 200;
+    const out: { key: string; balanceSat: number }[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const page = await view("get_unavailable_utxos_paged", { from_index: from, limit: PAGE });
+      if (!isObj(page)) return out;
+      for (const [key, u] of Object.entries(page)) if (isObj(u)) out.push({ key, balanceSat: num(u["balance"]) });
+      if (Object.keys(page).length < PAGE) return out;
+    }
+  }
+
   return {
     chain,
+    unavailableUtxos: allUnavailable,
     tx: chain === "btc" ? mempoolTx : (txid) => blockchairTx(txid),
     depositTx: chain === "btc" ? mempoolTx : (txid) => blockchairTx(txid, true),
     async spentBy(txid, vout) {
@@ -234,8 +251,12 @@ export function publicBtcRefundClient(fetchImpl: typeof fetch = fetch, rpc: stri
       return String(await view("get_user_deposit_address", { deposit_msg: msg }));
     },
     async bridgeHolds(key) {
-      const [held, unavailable] = await Promise.all([view("list_utxos", { utxo_storage_keys: [key] }), view("list_unavailable_utxos", { utxo_storage_keys: [key] })]);
-      return (isObj(held) && held[key] != null) || (isObj(unavailable) && unavailable[key] != null);
+      const held = await view("list_utxos", { utxo_storage_keys: [key] });
+      return isObj(held) && held[key] != null;
+    },
+    async bridgeAbsorbed(key) {
+      const unavailable = await view("list_unavailable_utxos", { utxo_storage_keys: [key] });
+      return isObj(unavailable) && unavailable[key] != null;
     },
     refundRequests: allRequests,
     async refundRequest(key) {
@@ -297,8 +318,9 @@ export async function btcDepositFacts(raw: string, clients: BtcRefundClient | Bt
   const found = await findDeposit(tx, client, vout);
   const key = `${txid}@${found.vout}`;
   const out = tx.outputs[found.vout];
-  const [held, spender, request] = await Promise.all([
+  const [held, absorbed, spender, request] = await Promise.all([
     found.msg ? client.bridgeHolds(key) : Promise.resolve(false),
+    found.msg ? client.bridgeAbsorbed(key) : Promise.resolve(false),
     found.msg ? client.spentBy(txid, found.vout) : Promise.resolve(null),
     found.msg ? client.refundRequest(key) : Promise.resolve(null),
   ]);
@@ -314,6 +336,7 @@ export async function btcDepositFacts(raw: string, clients: BtcRefundClient | Bt
     senders: tx.senders,
     msg: found.msg,
     bridgeHolds: held,
+    absorbed,
     spentBy: spender ? { txid: spender, inputs: spendTx?.inputs ?? 0, paysTo: (spendTx?.outputs ?? []).flatMap((o) => (o.address ? [o.address] : [])) } : null,
     request,
     funding: tx.funding,

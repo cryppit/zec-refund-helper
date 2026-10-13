@@ -75,6 +75,11 @@ function headline(r: Report): string[] {
       ];
     case "credited":
       return [`CREDITED  the bridge took this deposit in; follow its order account ${v.orderAccount} in ${CHECKER}.`];
+    case "absorbed":
+      return [
+        `ABSORBED  the bridge verified this deposit but it is below the ${v.minDepositSat}-${minor.replace(/s$/, "")} minimum, so nothing was minted on NEAR. The contract keeps the coin in its unavailable UTXOs and has no refund path for it: request_refund refuses a verified deposit, and no method spends or releases it.`,
+        "Only the Omni bridge team can recover it (a contract change); this tool has no commands to give.",
+      ];
     case "refunded":
       return [`REFUNDED  sent back to ${v.refundTo} in ${name} transaction ${v.refundTx}`];
     case "crediting":

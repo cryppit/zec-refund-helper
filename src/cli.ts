@@ -4,14 +4,20 @@
 //
 //   zec-refund <your Zcash or Bitcoin transaction hash> [--vout N] [--json]
 //   zec-refund --board [--json]          # every open refund request on both connectors
+//   zec-refund --scan [--json] [--since YYYY-MM-DD] [--cache DIR] [--progress FILE] [--concurrency N]
+//                                        # every uncredited deposit the bridge indexer lists, checked, with totals
 //
 // Public data only, no key: Blockchair / mempool.space, the Omni bridge indexer, and the connector contracts over NEAR
 // RPC. Prints the commands still to run; it never signs or sends anything.
 
 import { publicBtcRefundClient, checkBtcDeposit, checkRefundBoard, type BtcRefundClient } from "./btc-refund.js";
 import { renderBtcRefundText, renderRefundBoardText } from "./render-btc-refund.js";
+import { renderScanText } from "./render-scan.js";
+import { INDEX_FIRST_RECORD_SEC, pacedFetch, SCAN_INTERVALS_MS, scanCandidates, walkIndexer } from "./scan.js";
+import { appendFileSync } from "node:fs";
 
-const USAGE = "usage: zec-refund <your Zcash or Bitcoin transaction hash> [--vout N] [--json]\n       zec-refund --board [--json]";
+const USAGE =
+  "usage: zec-refund <your Zcash or Bitcoin transaction hash> [--vout N] [--json]\n       zec-refund --board [--json]\n       zec-refund --scan [--json] [--since YYYY-MM-DD] [--cache DIR] [--progress FILE] [--concurrency N]";
 
 const argv = process.argv.slice(2);
 const replacer = (_k: string, v: unknown): unknown => (typeof v === "bigint" ? v.toString() : v);
@@ -32,6 +38,8 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  if (argv.includes("--scan")) return scan(json);
+
   const voutIdx = argv.indexOf("--vout");
   const input = argv.find((a, i) => !a.startsWith("--") && (voutIdx === -1 || i !== voutIdx + 1));
   const vout = voutIdx === -1 ? undefined : Number(argv[voutIdx + 1]);
@@ -45,6 +53,35 @@ async function main(): Promise<number> {
     return 1;
   }
   console.log(json ? JSON.stringify(r, replacer, 2) : renderBtcRefundText(r));
+  return 0;
+}
+
+const opt = (name: string): string | undefined => {
+  const i = argv.indexOf(name);
+  return i === -1 ? undefined : argv[i + 1];
+};
+
+/** The full scan: walk the indexer (long; progress on stderr and in --progress FILE), then check each candidate. */
+async function scan(json: boolean): Promise<number> {
+  const progressFile = opt("--progress");
+  const progress = (msg: string): void => {
+    const line = `${new Date().toISOString()} ${msg}`;
+    console.error(line);
+    if (progressFile) appendFileSync(progressFile, line + "\n");
+  };
+  const since = opt("--since");
+  const fromSec = since ? Date.parse(`${since}T00:00:00Z`) / 1000 : Math.floor(INDEX_FIRST_RECORD_SEC / 86_400) * 86_400;
+  const concurrency = Number(opt("--concurrency") ?? 8);
+  if (!Number.isFinite(fromSec) || !Number.isInteger(concurrency) || concurrency < 1) {
+    console.error(USAGE);
+    return 2;
+  }
+  const now = nowSec();
+  const onRetry = (url: string, attempt: number, why: string): void => progress(`retry ${attempt} ${new URL(url).host}: ${why}`);
+  const walk = await walkIndexer(pacedFetch(fetch, { intervalMs: SCAN_INTERVALS_MS, onRetry }), { fromSec, toSec: now, concurrency, cacheDir: opt("--cache"), onProgress: progress });
+  progress(`walk done: ${walk.pages} pages, ${walk.records} transfers, ${walk.open.length} deposits not Finalised`);
+  const report = await scanCandidates(pacedFetch(fetch, { intervalMs: SCAN_INTERVALS_MS, cache: true, onRetry }), { nowSec: now, walk, onProgress: progress });
+  console.log(json ? JSON.stringify(report, replacer, 2) : renderScanText(report));
   return 0;
 }
 

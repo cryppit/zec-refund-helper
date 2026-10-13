@@ -71,8 +71,14 @@ export interface BtcDepositFacts {
   senders: string[];
   /** The bridge's record for the deposit address, already checked against the contract; null: not a deposit address. */
   msg: DepositMsg | null;
-  /** The coin is in the bridge's own UTXO set: it was credited. */
+  /** The coin is in the bridge's own UTXO set (`list_utxos`): it was credited. */
   bridgeHolds: boolean;
+  /**
+   * The coin is in the bridge's `unavailable_utxos`: the contract verified the deposit but it was below
+   * `min_deposit_amount`, so nothing was minted. It is marked verified, which `request_refund` refuses, and no method
+   * ever spends or removes it: the deposit is absorbed, with no refund path (btc-bridge v0.9.7-rc3 `deposit.rs`).
+   */
+  absorbed?: boolean;
   spentBy: { txid: string; inputs: number; paysTo: string[] } | null;
   request: RefundRequestRow | null;
   funding: Funding;
@@ -82,6 +88,7 @@ export type BtcDepositVerdict =
   | { state: "unconfirmed" }
   | { state: "not_a_deposit" }
   | { state: "credited"; orderAccount: string }
+  | { state: "absorbed"; minDepositSat: number }
   | { state: "refunded"; refundTo: string; refundTx: string }
   | { state: "crediting"; stuckAfterSec: number }
   | {
@@ -166,13 +173,14 @@ function refundAddressOf(f: BtcDepositFacts): string | null {
 
 /** The bridge took the deposit in: it holds the coin, or it has spent it in a transaction that is not the refund. */
 export function isCredited(f: BtcDepositFacts): boolean {
-  if (!f.msg) return false;
+  if (!f.msg || f.absorbed) return false;
   if (f.bridgeHolds) return true;
   return f.spentBy !== null && !isRefundOf(f.spentBy, refundAddressOf(f));
 }
 
 export function btcDepositVerdict(f: BtcDepositFacts, c: RefundConfig, nowSec: number): BtcDepositVerdict {
   if (f.confirmedAtSec === null) return { state: "unconfirmed" };
+  if (f.absorbed) return { state: "absorbed", minDepositSat: c.minDepositSat };
   if (!f.msg) return { state: "not_a_deposit" };
   if (isCredited(f)) return { state: "credited", orderAccount: receiverOf(f.msg) };
 

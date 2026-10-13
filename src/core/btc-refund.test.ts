@@ -56,6 +56,15 @@ const withRefundAddress = { recipient_id: "intents.near", safe_deposit: { msg: `
 const HOUR = 3_600;
 const DAY = 86_400;
 
+describe("a deposit below the minimum that the bridge verified (unavailable_utxos)", () => {
+  it("is absorbed, not credited: nothing was minted and the contract has no refund path for it", () => {
+    const f = facts({ chain: "zcash", amountSat: 40_000, absorbed: true });
+    expect(isCredited(f)).toBe(false);
+    expect(btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY)).toEqual({ state: "absorbed", minDepositSat: 100_000 });
+    expect(refundSteps(f, { state: "absorbed", minDepositSat: 100_000 }, ZCONFIG)).toEqual([]);
+  });
+});
+
 describe("receiverOf", () => {
   it("is the order account inside a 1Click deposit message, or the plain NEAR recipient", () => {
     expect(receiverOf(facts().msg!)).toBe(ORDER);

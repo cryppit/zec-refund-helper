@@ -38,6 +38,13 @@ describe("renderBtcRefundText", () => {
     expect(text).toContain("We never hold keys");
   });
 
+  it("a deposit the bridge absorbed below the minimum: no credit and no refund path, said plainly", () => {
+    const text = report({ ...FACTS, amountSat: 1_000, request: null, absorbed: true }, 1_791_900_000);
+    expect(text).toContain("ABSORBED  the bridge verified this deposit but it is below the 2500-satoshi minimum, so nothing was minted on NEAR");
+    expect(text).toContain("no refund path");
+    expect(text).not.toContain("1. ");
+  });
+
   it("a stuck deposit nobody has asked about yet", () => {
     const text = report({ ...FACTS, request: null }, 1_791_900_000);
     expect(text).toContain("STUCK  confirmed 2026-08-19 and never credited on NEAR");

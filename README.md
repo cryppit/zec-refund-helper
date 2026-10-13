@@ -28,16 +28,16 @@ Given a 64-hex transaction hash, it:
    transaction as 0 inputs, 0 fee and a 0 shielded delta.
 2. For each output, asks the Omni bridge indexer for the deposit message behind that address, then checks the
    indexer's answer against the connector contract itself (`get_user_deposit_address`), so it does not rely on the indexer alone.
-3. Reads from the connector over NEAR RPC (FastNEAR): whether the bridge holds the coin (`list_utxos`,
-   `list_unavailable_utxos`), any refund request (`get_refund_requests_paged`, with the fee stored on it), and the live
+3. Reads from the connector over NEAR RPC (FastNEAR): whether the bridge holds the coin (`list_utxos`: credited) or
+   absorbed it (`list_unavailable_utxos`: verified below the minimum, nothing minted), any refund request (`get_refund_requests_paged`, with the fee stored on it), and the live
    config: timelocks, minimum deposit and the NEAR deposits that `request_refund` and `execute_refund` need. The
    Zcash refund fee is the contract's own ZIP-317 minimum (10,000 zatoshis for a one-input refund, transparent or
    shielded), not the 0.01 ZEC `max_btc_gas_fee` cap.
 4. Checks on the UTXO chain whether the deposit output was spent and, if so, whether that spend was the refund
    (it spends only that coin and pays only the refund address).
-5. Gives one verdict: `unconfirmed`, `not_a_deposit`, `credited`, `crediting` (first 6 hours), `refundable` (stuck),
-   `requested` (in its timelock), `ready` (lock passed, nobody executed it), `executed` (waiting for the MPC signature)
-   or `refunded`.
+5. Gives one verdict: `unconfirmed`, `not_a_deposit`, `credited`, `absorbed` (below the minimum: verified, nothing
+   minted, and no refund path, see below), `crediting` (first 6 hours), `refundable` (stuck), `requested` (in its
+   timelock), `ready` (lock passed, nobody executed it), `executed` (waiting for the MPC signature) or `refunded`.
 6. Classifies the refund address (ZIP-316 parsing, no dependencies: Bech32m, F4Jumble with BLAKE2b, the receiver
    typecodes; tested against the official zcash-test-vectors): a transparent t-address, a TEX address, a unified
    address and its receivers (Orchard, Sapling, transparent), or a Sapling or Sprout z-address.
@@ -80,6 +80,37 @@ transparent sender. The tool says so and:
 `zec-refund --board` lists every refund request on both connectors, ready ones first with how long nobody has executed
 them, then locked ones, then executed ones.
 
+### How much is stuck: `--scan`
+
+`zec-refund --scan` measures the stuck money across both connectors (results and method: [IMPACT.md](IMPACT.md)):
+
+1. **Enumerate.** Deposit addresses are derived per deposit message, so the chain alone cannot list them. The only
+   public list is the bridge indexer's transfer list (`/api/v4/transfers`), which records every deposit it sees to
+   an address it handed out, with its status (`Initialised` when seen on Bitcoin or Zcash, `Finalised` once credited
+   on NEAR). The list is paged by a MongoDB ObjectId cursor that starts with the insertion time, so the scan reads it
+   as one-day segments in parallel. The list starts on 2026-06-25.
+2. **Add** every refund request on both connectors (`get_refund_requests_paged`), which reach back before that date.
+3. **Check** each deposit not `Finalised`, and each requested one, with the same code as `zec-refund <txid>`: a fresh
+   indexer look-up, the transaction on the chain, the contract's own derived address, the bridge's UTXO set, the
+   spend, the refund request, and whether the NEAR account in the deposit message exists.
+4. **Classify** each uncredited one: `pending` (inside the 6-hour crediting window, not counted as stuck),
+   `below_minimum`, `bad_message` (no message derives the address, or it names a NEAR account that does not exist)
+   or `unknown`; and whether it is refundable now (request, execute or sign) and its refund status.
+5. **Total** per chain, in coins and in USD (CoinGecko, keyless).
+
+Requests are paced per host, retried with backoff on 429 and 5xx, and cached within the run. A full scan reads
+about 30,000 indexer pages (about 40 minutes); `--cache DIR` keeps finished days so the next run only reads the
+new ones, and `--progress FILE` streams progress.
+
+### Deposits below the minimum are absorbed
+
+In the deployed connector (`deposit.rs`, v0.9.7-rc3; the same in 0.9.6), when a relayer verifies a deposit below
+`min_deposit_amount`, the contract records it in `unavailable_utxos` and in its set of verified deposits, and mints
+nothing. `request_refund` refuses any verified deposit, and no method spends or removes an unavailable UTXO. So such a
+deposit can neither be credited nor refunded by anyone; only a contract change can release it. Earlier versions of
+this tool counted it as credited; it is now its own verdict, `absorbed`. (A below-minimum deposit that no relayer has
+verified yet is still refundable.)
+
 ## Custody and trust model
 
 - **Keyless.** It only reads public APIs and view methods. There is no key, account, login or API key anywhere in the code.
@@ -104,6 +135,7 @@ pnpm zec-refund <your Zcash transaction hash>            # the verdict and the s
 pnpm zec-refund <hash> --vout 1                          # pick the output if the transaction has several
 pnpm zec-refund <hash> --json                            # machine-readable report
 pnpm zec-refund --board                                  # every open refund request, Zcash and Bitcoin
+pnpm zec-refund --scan --cache .scan --progress scan.log # every stuck deposit and the totals (long; see IMPACT.md)
 
 pnpm build && node dist/cli.js <hash>                    # or as a binary: `zec-refund` (bin in package.json)
 ```
@@ -151,6 +183,9 @@ return the fields that source defines.
 - **Third-party read APIs.** Blockchair, mempool.space, the Omni bridge indexer and FastNEAR are public, keyless
   services. Their terms of use have not been reviewed. Rate limits or outages show up as errors.
 - **"Stuck" is a heuristic.** A deposit counts as stuck 6 hours after confirmation with no credit.
+- **The scan is a lower bound.** It sees deposits the indexer lists (from 2026-06-25) and deposits with a refund
+  request. A deposit to an address the indexer never handed out, or an older one nobody requested a refund for, is
+  not seen.
 - **No signing by design.** You still need `bridge-cli` (Near-One/bridge-sdk-rs) or the `near` CLI and a NEAR account
   with a few NEAR for the request (2 NEAR, not returned) and the execution (1 NEAR) deposits.
 - **Mainnet only.** The connector accounts and RPC endpoint are hard-coded for mainnet.

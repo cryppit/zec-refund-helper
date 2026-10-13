@@ -17,6 +17,8 @@ const CREDITED_SPEND = (JSON.parse(fx("outspend-credited.json")) as { txid: stri
 const ZEC = "6de202d64d2b7c04154ed73f892c7dd7f288d440bde80d39059d2341fd9abadc";
 /** A real 50 ZEC deposit of 2026-10-13 funded from the Ironwood pool: no transparent input, a unified refund address. */
 const ZEC_SHIELDED = "04dc643f8a1d19baf476178d01eac8fc553700e36f849df91e46924fa3f2cae6";
+/** A real 0.0004 ZEC deposit of 2026-10-09, below the 0.001 ZEC minimum: verified into unavailable_utxos, nothing minted. */
+const ZEC_ABSORBED = "a2d0906efe45369db596bc83cf270426a471942d9af45bf20bbb96aa633e3320";
 const BLOCKCHAIR_RAW = "https://api.blockchair.com/zcash/raw/transaction/";
 const M = "https://mempool.space/api";
 const BLOCKCHAIR = "https://api.blockchair.com/zcash/dashboards/transaction/";
@@ -39,7 +41,10 @@ function recordedFetch(calls: string[] = []): typeof fetch {
     if (url === `${BLOCKCHAIR_RAW}${ZEC}`) return json(fx("zec-raw.json"));
     if (url === `${BLOCKCHAIR}${ZEC_SHIELDED}`) return json(fx("zec-shielded-tx.json"));
     if (url === `${BLOCKCHAIR_RAW}${ZEC_SHIELDED}`) return json(fx("zec-shielded-raw.json"));
+    if (url === `${BLOCKCHAIR}${ZEC_ABSORBED}`) return json(fx("zec-absorbed-tx.json"));
+    if (url === `${BLOCKCHAIR_RAW}${ZEC_ABSORBED}`) return json(fx("zec-absorbed-raw.json"));
     if (url.startsWith(BLOCKCHAIR)) return json('{"data":[],"context":{"code":200}}');
+    if (url === "https://mainnet.api.bridge.nearone.org/api/v3/utxo/get_deposit_message?chain=zcash&address=t1VSSVw7j6H3DnL49Quagf1UZVFY6hxiX6n") return json(fx("zec-absorbed-msg.json"));
     if (url === "https://mainnet.api.bridge.nearone.org/api/v3/utxo/get_deposit_message?chain=zcash&address=t1c4LrfuWHBmL86JZcohcdt5gWZTJfTYtte") return json(fx("zec-msg.json"));
     if (url === "https://mainnet.api.bridge.nearone.org/api/v3/utxo/get_deposit_message?chain=zcash&address=t1RTEogVdgA8cWY8zm1uomj5ThPZnbp8BB4") return json(fx("zec-shielded-msg.json"));
     if (url.startsWith(INDEXER)) return new Response("", { status: 404 });
@@ -52,8 +57,13 @@ function recordedFetch(calls: string[] = []): typeof fetch {
           case "get_config":
             return json(fx("zec-rpc-config.json"));
           case "get_user_deposit_address":
+            if (args.deposit_msg?.refund_address === "t1Kxq1ACfjM1SkGyG4Q5hoFrRE66vDPGsrT") return json(fx("zec-absorbed-rpc-addr.json"));
             return json(fx(args.deposit_msg?.refund_address?.startsWith("u1") ? "zec-shielded-rpc-addr.json" : "zec-rpc-addr.json"));
+          case "list_unavailable_utxos":
+            if (args.utxo_storage_keys?.[0] === `${ZEC_ABSORBED}@0`) return json(fx("zec-absorbed-rpc-unavail.json"));
+            return viewResult(Object.fromEntries((args.utxo_storage_keys ?? []).map((k) => [k, null])));
           case "list_utxos":
+            if (args.utxo_storage_keys?.[0] === `${ZEC_ABSORBED}@0`) return viewResult({ [`${ZEC_ABSORBED}@0`]: null });
             if (args.utxo_storage_keys?.[0] === `${ZEC_SHIELDED}@0`) return json(fx("zec-shielded-rpc-utxos.json"));
             return viewResult({ [`${ZEC}@0`]: { vout: 0, balance: "41000000" } });
           case "get_refund_requests_paged":
@@ -166,6 +176,14 @@ describe("checkBtcDeposit", () => {
     expect(r.verdict).toMatchObject({ state: "refundable", refundToFromDeposit: true, noTransparentSender: true, tooSmall: false, feeSat: 10_000 });
     expect(r.steps.map((s) => s.title)).toEqual(["Request the refund (2 NEAR, not returned)", "Wait 2 days for the timelock", "Execute the refund, shielded (1 NEAR)", "Have the bridge sign the Zcash refund"]);
     expect(r.steps[2]?.command).toBe(`bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${ZEC_SHIELDED} --vout 0`);
+  });
+
+  it("a real Zcash deposit below the minimum: the bridge verified it into unavailable_utxos and minted nothing, so it is absorbed, not credited", async () => {
+    const r = await checkBtcDeposit(ZEC_ABSORBED, publicUtxoRefundClients(recordedFetch()), NOW);
+    if ("error" in r) throw new Error(r.error);
+    expect(r.facts).toMatchObject({ chain: "zcash", amountSat: 40_000, depositAddress: "t1VSSVw7j6H3DnL49Quagf1UZVFY6hxiX6n", bridgeHolds: false, absorbed: true, spentBy: null });
+    expect(r.verdict).toEqual({ state: "absorbed", minDepositSat: 100_000 });
+    expect(r.steps).toEqual([]);
   });
 
   it("a hash neither chain knows", async () => {
