@@ -35,6 +35,7 @@ describe("renderBtcRefundText", () => {
     expect(text).toContain(`The bridge can only send it to ${SENDER}.`);
     expect(text).toContain("1. Execute the refund (1 NEAR)");
     expect(text).toContain("2. Have the bridge sign the Bitcoin refund");
+    expect(text).toContain("If the near CLI shows an error or a timeout, look the transaction up on nearblocks.io before sending it again: it may have gone through.");
     expect(text).toContain("We never hold keys");
   });
 

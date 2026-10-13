@@ -138,6 +138,8 @@ export function renderBtcRefundText(r: Report): string {
       if (s.command) lines.push(`   ${s.command}`);
       if (s.note) lines.push(`   ${s.note}`);
     });
+    // nearcore 2.14 changes the RPC's timeout error; older near CLIs can report one for a call that landed.
+    lines.push("If the near CLI shows an error or a timeout, look the transaction up on nearblocks.io before sending it again: it may have gone through.");
   }
   lines.push("");
   const explorer = f.chain === "btc" ? "mempool.space" : "Blockchair";
