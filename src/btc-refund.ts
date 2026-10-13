@@ -23,6 +23,7 @@ import {
   UTXO_CHAINS,
   type UtxoChain,
 } from "./core/btc-refund.js";
+import { nearRpc, type RpcEvent } from "./core/rpc.js";
 
 export interface BtcTx {
   confirmedAtSec: number | null;
@@ -60,7 +61,6 @@ const MEMPOOL = "https://mempool.space/api";
 const BLOCKCHAIR = "https://api.blockchair.com/zcash/dashboards/transaction/";
 const BLOCKCHAIR_RAW = "https://api.blockchair.com/zcash/raw/transaction/";
 const INDEXER = "https://mainnet.api.bridge.nearone.org/api/v3/utxo/get_deposit_message";
-const NEAR_RPC = "https://rpc.mainnet.fastnear.com";
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -77,14 +77,24 @@ function hasRefundAddress(depositMsgJson: unknown): boolean {
   }
 }
 
+/** A JSON-RPC caller: posts a request body, returns the parsed response (see core/rpc.ts). */
+export type RpcCall = (body: unknown) => Promise<unknown>;
+
+/** The live NEAR RPC: every provider in NEAR_RPC_PROVIDERS, retried with backoff on the wall clock, at most ~8 s of waiting. */
+export function liveNearRpc(fetchImpl: typeof fetch = fetch, onEvent?: (e: RpcEvent) => void, providers?: readonly string[]): RpcCall {
+  return nearRpc({ providers, fetch: fetchImpl, now: () => Date.now(), sleep: (ms) => new Promise((r) => setTimeout(r, ms)), random: Math.random, onEvent });
+}
+
 /** Every UTXO chain we check, Bitcoin first: a hash is looked up on each in turn. */
-export const publicUtxoRefundClients = (fetchImpl: typeof fetch = fetch, rpc: string = NEAR_RPC): BtcRefundClient[] => [
+export const publicUtxoRefundClients = (fetchImpl: typeof fetch = fetch, rpc: RpcCall | string = liveNearRpc(fetchImpl)): BtcRefundClient[] => [
   publicBtcRefundClient(fetchImpl, rpc, "btc"),
   publicBtcRefundClient(fetchImpl, rpc, "zcash"),
 ];
 
-export function publicBtcRefundClient(fetchImpl: typeof fetch = fetch, rpc: string = NEAR_RPC, chain: UtxoChain = "btc"): BtcRefundClient {
+/** `rpc` is a caller, or one provider URL (still retried, no fallback). */
+export function publicBtcRefundClient(fetchImpl: typeof fetch = fetch, rpc: RpcCall | string = liveNearRpc(fetchImpl), chain: UtxoChain = "btc"): BtcRefundClient {
   const connector = UTXO_CHAINS[chain].connector;
+  const call: RpcCall = typeof rpc === "string" ? liveNearRpc(fetchImpl, undefined, [rpc]) : rpc;
   async function getJson(url: string): Promise<unknown | null> {
     const res = await fetchImpl(url);
     if (res.status === 404 || res.status === 400) return null;
@@ -93,18 +103,12 @@ export function publicBtcRefundClient(fetchImpl: typeof fetch = fetch, rpc: stri
   }
 
   async function view(method: string, args: unknown): Promise<unknown> {
-    const res = await fetchImpl(rpc, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "query",
-        params: { request_type: "call_function", finality: "final", account_id: connector, method_name: method, args_base64: btoa(JSON.stringify(args)) },
-      }),
+    const body = await call({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "query",
+      params: { request_type: "call_function", finality: "final", account_id: connector, method_name: method, args_base64: btoa(JSON.stringify(args)) },
     });
-    if (!res.ok) throw new Error(`NEAR RPC: HTTP ${res.status}`);
-    const body: unknown = await res.json();
     const result = isObj(body) && isObj(body["result"]) ? body["result"]["result"] : null;
     if (!Array.isArray(result)) throw new Error(`NEAR RPC: ${method} failed`);
     return JSON.parse(new TextDecoder().decode(Uint8Array.from(result as number[])));

@@ -9,7 +9,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { btcDepositFacts, publicBtcRefundClient, type BtcRefundClient } from "./btc-refund.js";
+import { btcDepositFacts, liveNearRpc, publicBtcRefundClient, type BtcRefundClient, type RpcCall } from "./btc-refund.js";
 import { btcDepositVerdict, UTXO_CHAINS, type BtcDepositFacts, type RefundConfig, type RefundRequestRow, type UtxoChain } from "./core/btc-refund.js";
 import { cursorAt, cursorTime, isCreditedStatus, parseTransfersPage, scanRow, segments, summarize, type ChainSummary, type IndexedDeposit, type ScanRow, type Segment } from "./core/scan.js";
 
@@ -275,14 +275,10 @@ export interface ScanReport {
   summary: Record<UtxoChain, ChainSummary>;
 }
 
-/** Whether a NEAR account exists (view_account); null if the RPC could not tell. */
-export async function accountExists(f: typeof fetch, accountId: string, rpc: string = NEAR_RPC): Promise<boolean | null> {
-  const res = await f(rpc, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: { request_type: "view_account", finality: "final", account_id: accountId } }),
-  });
-  const body: unknown = await res.json().catch(() => null);
+/** Whether a NEAR account exists (view_account); null if the RPC could not tell. `rpc`: a caller or one provider URL. */
+export async function accountExists(f: typeof fetch, accountId: string, rpc?: RpcCall | string): Promise<boolean | null> {
+  const call: RpcCall = typeof rpc === "function" ? rpc : liveNearRpc(f, undefined, rpc ? [rpc] : undefined);
+  const body: unknown = await call({ jsonrpc: "2.0", id: 1, method: "query", params: { request_type: "view_account", finality: "final", account_id: accountId } }).catch(() => null);
   if (isObj(body) && isObj(body["result"]) && body["result"]["amount"] !== undefined) return true;
   const text = JSON.stringify(body);
   if (/UNKNOWN_ACCOUNT|does not exist/.test(text)) return false;
@@ -334,13 +330,15 @@ export interface ScanOptions {
   nowSec: number;
   walk: WalkResult;
   onProgress?: (msg: string) => void;
-  rpc?: string;
+  /** A NEAR RPC caller, or one provider URL; default: every public provider in turn (core/rpc.ts). */
+  rpc?: RpcCall | string;
 }
 
 /** Phase 2: from the walk's open deposits and the connectors' refund requests to checked rows and totals. */
 export async function scanCandidates(f: typeof fetch, o: ScanOptions): Promise<ScanReport> {
   const chains: UtxoChain[] = ["btc", "zcash"];
-  const clients: Record<UtxoChain, BtcRefundClient> = { btc: publicBtcRefundClient(f, o.rpc, "btc"), zcash: publicBtcRefundClient(f, o.rpc, "zcash") };
+  const rpc: RpcCall = typeof o.rpc === "function" ? o.rpc : liveNearRpc(f, undefined, o.rpc ? [o.rpc] : undefined);
+  const clients: Record<UtxoChain, BtcRefundClient> = { btc: publicBtcRefundClient(f, rpc, "btc"), zcash: publicBtcRefundClient(f, rpc, "zcash") };
   const configs = {} as Record<UtxoChain, RefundConfig>;
   const requests = {} as Record<UtxoChain, Map<string, RefundRequestRow>>;
   const unavailable = {} as Record<UtxoChain, Map<string, number>>;
@@ -425,7 +423,7 @@ export async function scanCandidates(f: typeof fetch, o: ScanOptions): Promise<S
     }
     const verdict = btcDepositVerdict(r.facts, configs[c.chain], o.nowSec);
     const recipient = r.facts.msg?.recipient_id;
-    const exists = recipient ? await accountExists(f, recipient, o.rpc).catch(() => null) : null;
+    const exists = recipient ? await accountExists(f, recipient, rpc).catch(() => null) : null;
     const row = scanRow(r.facts, verdict, configs[c.chain], o.nowSec, { recipientExists: exists, source: c.source, indexerStatus: status ?? c.indexerStatus, seenAtSec: c.seenAtSec });
     if (row) rows.push(row);
   }
@@ -472,5 +470,8 @@ export const SCAN_INTERVALS_MS: Record<string, number> = {
   "mempool.space": 300,
   "api.blockchair.com": 2_100,
   "rpc.mainnet.fastnear.com": 250,
+  "free.rpc.fastnear.com": 250,
+  "near.drpc.org": 250,
+  "rpc.mainnet.near.org": 2_000,
   "api.coingecko.com": 1_000,
 };
