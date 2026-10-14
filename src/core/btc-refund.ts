@@ -166,7 +166,8 @@ export function receiverOf(msg: DepositMsg): string {
       const inner: unknown = JSON.parse(msg.safe_deposit.msg);
       if (typeof inner === "object" && inner !== null && "receiver_id" in inner && typeof inner.receiver_id === "string") return inner.receiver_id;
     } catch {
-      // not JSON: fall through to the recipient
+      // not JSON: intents.near also takes a bare account id as the message
+      if (/^[a-z0-9._-]{2,64}$/.test(msg.safe_deposit.msg)) return msg.safe_deposit.msg;
     }
   }
   return msg.recipient_id;

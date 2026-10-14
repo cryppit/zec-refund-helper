@@ -399,3 +399,9 @@ describe("refund safety", () => {
     expect(btcDepositVerdict(f, CONFIG, CONFIRMED + 30 * DAY_S)).toEqual({ state: "refunded", refundTo: "bc1qnamedbytherequester000000000000000000", refundTx: "ref" });
   });
 });
+
+describe("receiverOf", () => {
+  it("takes a bare account as the safe deposit message (intents.near's DepositMessage::from_str accepts one)", () => {
+    expect(receiverOf({ recipient_id: "intents.near", safe_deposit: { msg: "alice.near" } })).toBe("alice.near");
+  });
+});
