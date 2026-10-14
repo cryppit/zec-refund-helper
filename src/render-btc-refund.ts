@@ -21,7 +21,7 @@ function poolName(f: BtcDepositFacts): string {
   return `the ${p.join(" and ")} shielded pool${p.length > 1 ? "s" : ""}`;
 }
 
-function fromWhom(f: BtcDepositFacts): string {
+export function fromWhom(f: BtcDepositFacts): string {
   if (f.funding.kind === "shielded") return `${poolName(f)} (no transparent sender)`;
   const t = f.senders.join(", ") || "?";
   return f.funding.kind === "mixed" ? `${t} and ${poolName(f)}` : t;
@@ -61,7 +61,11 @@ function requestLines(r: Report, refundTo: string): string[] {
   return lines;
 }
 
-function headline(r: Report): string[] {
+/**
+ * What happened to the deposit: the state in capitals, then why (and, for a request, where it goes and its fee). `checker`
+ * names where to follow a credited order (the CLI points to Where's My Swap); the web page passes null and stands alone.
+ */
+export function headline(r: Report, checker: string | null = CHECKER): string[] {
   const v = r.verdict;
   const f = r.facts;
   const { name, minor } = UTXO_CHAINS[f.chain];
@@ -71,10 +75,10 @@ function headline(r: Report): string[] {
     case "not_a_deposit":
       return [
         `NOT AN OMNI ${f.chain.toUpperCase()} DEPOSIT  no output of this transaction pays a deposit address the Omni ${name} bridge knows.`,
-        `A deposit through the PoA bridge is not covered here: paste the same hash into ${CHECKER}.`,
+        checker ? `A deposit through the PoA bridge is not covered here: paste the same hash into ${checker}.` : "A deposit through the PoA bridge is not covered here.",
       ];
     case "credited":
-      return [`CREDITED  the bridge took this deposit in; follow its order account ${v.orderAccount} in ${CHECKER}.`];
+      return [checker ? `CREDITED  the bridge took this deposit in; follow its order account ${v.orderAccount} in ${checker}.` : `CREDITED  the bridge took this deposit in; its NEAR order account is ${v.orderAccount}.`];
     case "absorbed":
       return [
         `ABSORBED  the bridge verified this deposit but it is below the ${v.minDepositSat}-${minor.replace(/s$/, "")} minimum, so nothing was minted on NEAR. The contract keeps the coin in its unavailable UTXOs and has no refund path for it: request_refund refuses a verified deposit, and no method spends or releases it.`,
@@ -132,29 +136,44 @@ function headline(r: Report): string[] {
 
 export function renderBtcRefundText(r: Report): string {
   const f = r.facts;
-  const { name, unit, connector } = UTXO_CHAINS[f.chain];
+  const { name, unit } = UTXO_CHAINS[f.chain];
   const lines: string[] = [];
   lines.push(`${`${name} deposit`.padEnd(18)}${f.txid} (output ${f.vout})`);
   lines.push(`                  ${coins(f.amountSat)} ${unit} from ${fromWhom(f)} to ${f.depositAddress}${f.confirmedAtSec ? `, confirmed ${when(f.confirmedAtSec)}` : ""}`);
   if (r.orderAccount) lines.push(`For NEAR account  ${r.orderAccount}`);
   lines.push("");
   lines.push(...headline(r));
-  if (r.steps.length) {
+  const intro = stepsIntro(r);
+  if (intro) {
     lines.push("");
-    const where = r.verdict.state === "refundable" && r.verdict.refundTo === null ? "the address named in the request" : "the address above";
-    lines.push(`What is left. Sign each step with your own NEAR account; anyone can pay these fees, and the coin can only go to ${where}.`);
+    lines.push(`What is left. ${intro}`);
     r.steps.forEach((s, i) => {
       lines.push(`${i + 1}. ${s.title}`);
       if (s.command) lines.push(`   ${s.command}`);
       if (s.note) lines.push(`   ${s.note}`);
     });
-    // nearcore 2.14 changes the RPC's timeout error; older near CLIs can report one for a call that landed.
-    lines.push("If the near CLI shows an error or a timeout, look the transaction up on nearblocks.io before sending it again: it may have gone through.");
+    lines.push(NEAR_CLI_TIMEOUT_NOTE);
   }
   lines.push("");
-  const explorer = f.chain === "btc" ? "mempool.space" : "Blockchair";
-  lines.push(`Sources: ${explorer}; the Omni bridge indexer's deposit message, checked against ${connector}; ${connector} (refund request, timelocks, fees). We never hold keys or sign anything.`);
+  lines.push(sourcesLine(r));
   return lines.join("\n");
+}
+
+/** Who signs the steps and where the coin can go; null when nothing is left to do. */
+export function stepsIntro(r: Report): string | null {
+  if (!r.steps.length) return null;
+  const where = r.verdict.state === "refundable" && r.verdict.refundTo === null ? "the address named in the request" : "the address above";
+  return `Sign each step with your own NEAR account; anyone can pay these fees, and the coin can only go to ${where}.`;
+}
+
+// nearcore 2.14 changes the RPC's timeout error; older near CLIs can report one for a call that landed.
+export const NEAR_CLI_TIMEOUT_NOTE = "If the near CLI shows an error or a timeout, look the transaction up on nearblocks.io before sending it again: it may have gone through.";
+
+/** Where every fact in the report came from. */
+export function sourcesLine(r: Report): string {
+  const { connector } = UTXO_CHAINS[r.facts.chain];
+  const explorer = r.facts.chain === "btc" ? "mempool.space" : "Blockchair";
+  return `Sources: ${explorer}; the Omni bridge indexer's deposit message, checked against ${connector}; ${connector} (refund request, timelocks, fees). We never hold keys or sign anything.`;
 }
 
 /** The stuck-money board: every open refund request, ready ones first. */

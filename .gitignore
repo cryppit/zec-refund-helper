@@ -6,3 +6,4 @@ dist/
 .DS_Store
 .scan/
 scan.log
+web-dist/

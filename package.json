@@ -22,10 +22,12 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:live": "vitest run --config vitest.live.config.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p web/tsconfig.json",
+    "build:web": "node web/build.mjs"
   },
   "devDependencies": {
     "@types/node": "22.20.4",
+    "esbuild": "0.28.2",
     "tsx": "4.23.15",
     "typescript": "6.0.3",
     "vitest": "5.0.2"

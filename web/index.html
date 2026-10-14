@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src https:; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Zcash Refund Helper</title>
+<meta name="description" content="Find a Zcash or Bitcoin deposit stuck in the NEAR Omni bridge and get the bridge's own refund steps. Keyless and read-only; it never signs anything.">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="main.js"></script>
+</head>
+<body>
+<main>
+  <header>
+    <p class="kicker">ZECATHON 2026 · Cross-Chain</p>
+    <h1>Zcash Refund <span class="accent">Helper</span></h1>
+    <p class="lede">Paste the hash of a Zcash or Bitcoin deposit stuck in the NEAR Omni bridge. You get the bridge's own refund steps, back to your own address, shielded when your address can take it.</p>
+    <p class="pills"><span>No wallet</span><span>No keys</span><span>Nothing to sign</span></p>
+  </header>
+
+  <form id="form" autocomplete="off">
+    <label for="q">Your Zcash or Bitcoin transaction hash</label>
+    <div class="row">
+      <input id="q" spellcheck="false" placeholder="64 hex characters, from your wallet">
+      <button type="submit">Check</button>
+    </div>
+    <p class="examples">Try a real one: <a href="#q=9deffb31135e3cdf6a62088d8639166673fe91c0e150fd9c80f6e61bba2bec39">a 0.1 BTC refund nobody has executed</a> · <a href="#q=04dc643f8a1d19baf476178d01eac8fc553700e36f849df91e46924fa3f2cae6">50 ZEC from the shielded pool</a> · <a href="#q=6de202d64d2b7c04154ed73f892c7dd7f288d440bde80d39059d2341fd9abadc">a credited ZEC deposit</a></p>
+  </form>
+
+  <section id="out" aria-live="polite"></section>
+
+  <section class="board-wrap">
+    <h2>Every open refund</h2>
+    <p class="muted">Refund requests on the Omni Bitcoin and Zcash connectors, read live from the contracts.</p>
+    <button id="board-btn" type="button">Show the board</button>
+    <div id="board" aria-live="polite"></div>
+  </section>
+
+  <footer>
+    <p>Open source (MIT): <a href="https://github.com/cryppit/zec-refund-helper" target="_blank" rel="noopener noreferrer">github.com/cryppit/zec-refund-helper</a> · by Cryppit</p>
+    <p class="muted">Lookups go from your browser straight to public sources (mempool.space, Blockchair, NEAR RPC, the Omni bridge indexer); nothing passes through us or is stored. Independent project, not affiliated with NEAR, the Omni bridge or the Zcash organisations. It never holds keys or signs anything.</p>
+  </footer>
+</main>
+</body>
+</html>

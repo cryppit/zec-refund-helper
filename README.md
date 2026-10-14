@@ -5,7 +5,8 @@ move it, and get the bridge's own refund steps. Bitcoin deposits through the sam
 
 Keyless and read-only: it never asks for, sees or holds a key, and it never signs or sends anything.
 
-Live demo: https://wheres-my-swap.higgsfield.app/refund (part of Cryppit's Where's My Swap checker for NEAR Intents).
+Live demo: https://cryppit.github.io/zec-refund-helper/ (this repository's own web page, `web/`: the same checks, run in
+your browser against public sources only).
 
 ## The problem
 
@@ -151,6 +152,7 @@ pnpm zec-refund <hash> --vout 1                          # pick the output if th
 pnpm zec-refund <hash> --json                            # machine-readable report
 pnpm zec-refund --board                                  # every open refund request, Zcash and Bitcoin
 pnpm zec-refund --scan --cache .scan --progress scan.log # every stuck deposit and the totals (long; see IMPACT.md)
+pnpm build:web                                           # the web page into web-dist/ (any static server can host it)
 
 pnpm build && node dist/cli.js <hash>                    # or as a binary: `zec-refund` (bin in package.json)
 ```
