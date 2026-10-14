@@ -34,6 +34,7 @@ function chainBlock(rep: ScanReport, chain: UtxoChain): string[] {
     `  absorbed below the minimum (verified into unavailable UTXOs, nothing minted, no refund path): ${s.absorbedCount} (${coins(s.absorbedSat)} ${unit})`,
     `  refundable now: ${s.refundableNowCount} (${coins(s.refundableNowSat)} ${unit}); requests ready and unexecuted: ${s.readyUnexecuted} (${coins(s.readyUnexecutedSat)} ${unit})`,
     `  pending (inside the 6-hour crediting window, not counted): ${s.pendingCount} (${coins(s.pendingSat)} ${unit})`,
+    `  bridge payouts that landed on deposit addresses (not user deposits, not counted): ${s.bridgePayoutCount} (${coins(s.bridgePayoutSat)} ${unit})`,
     `  ages: ${Object.entries(s.ages).map(([k, v]) => `${k} ${v}`).join(", ")}`,
   ];
   if (s.oldest) lines.push(`  oldest: ${s.oldest.txid}@${s.oldest.vout}, ${describeDuration(s.oldest.ageSec)}, ${coins(s.oldest.amountSat)} ${unit}`);

@@ -80,6 +80,16 @@ function headline(r: Report): string[] {
         `ABSORBED  the bridge verified this deposit but it is below the ${v.minDepositSat}-${minor.replace(/s$/, "")} minimum, so nothing was minted on NEAR. The contract keeps the coin in its unavailable UTXOs and has no refund path for it: request_refund refuses a verified deposit, and no method spends or releases it.`,
         "Only the Omni bridge team can recover it (a contract change); this tool has no commands to give.",
       ];
+    case "placeholder_refund":
+      return [
+        `NOT RECOVERABLE BY ITS SENDER  the deposit message pins the refund to ${v.refundTo}, a public example address used in documentation, not the depositor's wallet. The bridge can only refund there, so do not request it.`,
+        "Only the Omni bridge team can recover it; this tool has no commands to give.",
+      ];
+    case "too_old":
+      return [
+        `TOO OLD TO REQUEST  the bridge's light client keeps about a year of ${name} blocks and no longer has this deposit's (since about ${new Date(v.requestBySec * 1000).toISOString().slice(0, 10)}), so request_refund fails.`,
+        "Only the Omni bridge team can recover it; this tool has no commands to give.",
+      ];
     case "refunded":
       return [`REFUNDED  sent back to ${v.refundTo} in ${name} transaction ${v.refundTx}`];
     case "crediting":

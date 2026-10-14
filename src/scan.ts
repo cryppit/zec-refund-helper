@@ -291,8 +291,17 @@ export async function accountExists(f: typeof fetch, accountId: string, rpc?: Rp
  * only the record for this coin coming from its UTXO chain counts.
  */
 export async function indexerStatus(f: typeof fetch, chain: UtxoChain, txid: string, vout: number): Promise<string | null> {
+  return (await indexerLookup(f, chain, txid, vout)).status;
+}
+
+/**
+ * The deposit's own status, and whether the transaction is the bridge's own payout of a NEAR→chain withdrawal that
+ * landed on one of its deposit addresses (an end-to-end test, or a withdrawal to a deposit address): not a user's
+ * deposit, so not counted as stuck user money.
+ */
+export async function indexerLookup(f: typeof fetch, chain: UtxoChain, txid: string, vout: number): Promise<{ status: string | null; bridgePayout: boolean }> {
   const res = await f(`${INDEXER_API}/api/v4/transfers/transfer?utxo_chain=${CHAIN_PARAM[chain]}&utxo_tx_hash=${txid}&utxo_vout=${vout}`);
-  if (res.status === 404) return null;
+  if (res.status === 404) return { status: null, bridgePayout: false };
   const body: unknown = await res.json().catch(() => null);
   const transfers = isObj(body) && Array.isArray(body["transfers"]) ? body["transfers"].filter(isObj) : [];
   const deposit = transfers.find((t) => {
@@ -300,7 +309,12 @@ export async function indexerStatus(f: typeof fetch, chain: UtxoChain, txid: str
     const sameCoin = id["type"] !== "utxo" || (String(id["tx_hash"]).toLowerCase() === txid.toLowerCase() && Number(id["vout"]) === vout);
     return t["origin_chain"] === CHAIN_PARAM[chain] && sameCoin;
   });
-  return deposit && typeof deposit["status"] === "string" ? deposit["status"] : null;
+  const paidBy = (t: Record<string, unknown>): string | null => {
+    const fin = isObj(t["finalised"]) ? t["finalised"]["transaction_hash"] : null;
+    return typeof t["utxo_winning_tx_hash"] === "string" ? t["utxo_winning_tx_hash"] : typeof fin === "string" ? fin : null;
+  };
+  const bridgePayout = transfers.some((t) => t["origin_chain"] === "Near" && t["destination_chain"] === CHAIN_PARAM[chain] && paidBy(t)?.toLowerCase() === txid.toLowerCase());
+  return { status: deposit && typeof deposit["status"] === "string" ? deposit["status"] : null, bridgePayout };
 }
 
 export async function usdPrices(f: typeof fetch): Promise<ScanReport["prices"]> {
@@ -407,7 +421,8 @@ export async function scanCandidates(f: typeof fetch, o: ScanOptions): Promise<S
   async function check(c: Candidate): Promise<void> {
     const absorbedSat = unavailable[c.chain].get(`${c.txid}@${c.vout}`);
     if (absorbedSat !== undefined) return absorbed(c, absorbedSat);
-    const status = c.source === "indexer" ? await indexerStatus(f, c.chain, c.txid, c.vout) : c.indexerStatus;
+    const look = c.source === "indexer" ? await indexerLookup(f, c.chain, c.txid, c.vout) : { status: c.indexerStatus, bridgePayout: false };
+    const status = look.status;
     if (c.source === "indexer" && status !== null && isCreditedStatus(status)) {
       creditedSinceWalk += 1;
       return;
@@ -424,7 +439,7 @@ export async function scanCandidates(f: typeof fetch, o: ScanOptions): Promise<S
     const verdict = btcDepositVerdict(r.facts, configs[c.chain], o.nowSec);
     const recipient = r.facts.msg?.recipient_id;
     const exists = recipient ? await accountExists(f, recipient, rpc).catch(() => null) : null;
-    const row = scanRow(r.facts, verdict, configs[c.chain], o.nowSec, { recipientExists: exists, source: c.source, indexerStatus: status ?? c.indexerStatus, seenAtSec: c.seenAtSec });
+    const row = scanRow(r.facts, verdict, configs[c.chain], o.nowSec, { recipientExists: exists, source: c.source, indexerStatus: status ?? c.indexerStatus, seenAtSec: c.seenAtSec, bridgePayout: look.bridgePayout });
     if (row) rows.push(row);
   }
 

@@ -91,7 +91,7 @@ describe("isCreditedStatus", () => {
 });
 
 describe("stuckCause", () => {
-  const refundable: BtcDepositVerdict = { state: "refundable", refundTo: "t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1", refundToFromDeposit: false, lockSec: 1_209_600, belowMinimum: false, tooSmall: false, feeSat: 10_000, noTransparentSender: false };
+  const refundable: BtcDepositVerdict = { state: "refundable", refundTo: "t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1", refundToFromDeposit: false, lockSec: 1_209_600, belowMinimum: false, tooSmall: false, feeSat: 10_000, noTransparentSender: false, batchSender: false, requestBySec: null };
 
   it("credited, refunded or not a deposit at all: not stuck", () => {
     expect(stuckCause(facts({ bridgeHolds: true }), { state: "credited", orderAccount: "x" }, CFG, true)).toBeNull();
@@ -139,7 +139,7 @@ describe("scanRow", () => {
   });
 
   it("a stuck deposit with no request and a known refund address: refundable now by requesting", () => {
-    const row = scanRow(facts(), { state: "refundable", refundTo: "t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1", refundToFromDeposit: false, lockSec: 1_209_600, belowMinimum: false, tooSmall: false, feeSat: 10_000, noTransparentSender: false }, CFG, NOW, {
+    const row = scanRow(facts(), { state: "refundable", refundTo: "t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1", refundToFromDeposit: false, lockSec: 1_209_600, belowMinimum: false, tooSmall: false, feeSat: 10_000, noTransparentSender: false, batchSender: false, requestBySec: null }, CFG, NOW, {
       recipientExists: true,
       source: "indexer",
       indexerStatus: "Initialised",
@@ -148,7 +148,7 @@ describe("scanRow", () => {
   });
 
   it("a deposit not larger than the refund fee cannot be refunded", () => {
-    const row = scanRow(facts({ amountSat: 10_000 }), { state: "refundable", refundTo: "t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1", refundToFromDeposit: false, lockSec: 1, belowMinimum: true, tooSmall: true, feeSat: 10_000, noTransparentSender: false }, CFG, NOW, {
+    const row = scanRow(facts({ amountSat: 10_000 }), { state: "refundable", refundTo: "t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1", refundToFromDeposit: false, lockSec: 1, belowMinimum: true, tooSmall: true, feeSat: 10_000, noTransparentSender: false, batchSender: false, requestBySec: null }, CFG, NOW, {
       recipientExists: true,
       source: "indexer",
       indexerStatus: "Initialised",
@@ -207,5 +207,25 @@ describe("summarize", () => {
 
   it("buckets ages", () => {
     expect(ageBuckets([3_600, 2 * 86_400, 10 * 86_400, 45 * 86_400, 400 * 86_400])).toEqual({ "<1d": 1, "1-7d": 1, "7-30d": 1, "30-90d": 1, ">90d": 1 });
+  });
+});
+
+describe("what the scan counts as stuck user money", () => {
+  const row = (over: Partial<ScanRow>): ScanRow => ({
+    chain: "btc", txid: "t", vout: 0, amountSat: 100_000, depositAddress: "bc1q", confirmedAtSec: NOW - 86_400, ageSec: 86_400,
+    cause: "unknown", causeDetail: "", verdict: "refundable", refund: { status: "none", refundTo: null, unlocksAtSec: null, gasFeeSat: null },
+    refundableNow: "request", refundAddress: "none", funding: { kind: "transparent", pools: [] }, source: "indexer", indexerStatus: "Initialised",
+    ...over,
+  });
+
+  it("leaves out a bridge payout that landed on a deposit address, and counts it on its own", () => {
+    const s = summarize([row({}), row({ txid: "payout", amountSat: 11_069, bridgePayout: true })], { btc: 80_000, zcash: 1_000 });
+    expect(s.btc).toMatchObject({ stuckCount: 1, stuckSat: 100_000, bridgePayoutCount: 1, bridgePayoutSat: 11_069 });
+  });
+
+  it("the refund-address column is the deposit message's own, never the refund request's", () => {
+    const q = { amountSat: 1, refundAddress: "bc1qrequester", createdAtSec: NOW - 86_400, msgHasRefundAddress: false, executed: false, gasFeeSat: 5_000 };
+    const r = scanRow(facts({ request: q }), { state: "requested", refundTo: "bc1qrequester", unlocksAtSec: NOW + 86_400 }, CFG, NOW, { recipientExists: true, source: "refund_request", indexerStatus: null });
+    expect(r?.refundAddress).toBe("none");
   });
 });

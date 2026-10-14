@@ -110,6 +110,8 @@ describe("btcDepositVerdict", () => {
       tooSmall: false,
       feeSat: 5_000,
       noTransparentSender: false,
+      batchSender: false,
+      requestBySec: CONFIRMED + 52_704 * 600,
     });
   });
 
@@ -355,5 +357,45 @@ describe("a Zcash deposit funded from a shielded pool", () => {
     const v = btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY);
     expect(v).toMatchObject({ refundTo: null, noTransparentSender: false });
     expect(refundSteps(f, v, ZCONFIG)).toEqual([]);
+  });
+});
+
+// From the 2026-10-14 verification of the 28 stuck Bitcoin deposits (research_notes/Stuck BTC verification).
+describe("refund safety", () => {
+  const DAY_S = 86_400;
+
+  it("never suggests refunding to the sender of a batch payout (an exchange or service paying many outputs): the user names their own address", () => {
+    const f = facts({ outputs: 22, senders: ["bc1qexchangehotwallet0000000000000000000"] });
+    const v = btcDepositVerdict(f, CONFIG, CONFIRMED + DAY_S);
+    expect(v).toMatchObject({ state: "refundable", refundTo: null, batchSender: true });
+    const steps = refundSteps(f, v, CONFIG);
+    expect(steps[0]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain btc --btc-tx-hash ${TXID} --vout 0 --refund-address <your own Bitcoin address>`);
+    expect(steps[0]?.note).toContain("came in a batch payout of 22 outputs");
+  });
+
+  it("a single sender that paid one or two outputs (payment and change) is still the refund address", () => {
+    expect(btcDepositVerdict(facts({ outputs: 2 }), CONFIG, CONFIRMED + DAY_S)).toMatchObject({ state: "refundable", refundTo: SENDER, batchSender: false });
+  });
+
+  it("a deposit whose message pins the refund to a public example address cannot be recovered by its depositor: no steps", () => {
+    const placeholder = "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh";
+    const f = facts({ msg: { ...withRefundAddress, refund_address: placeholder } });
+    const v = btcDepositVerdict(f, CONFIG, CONFIRMED + DAY_S);
+    expect(v).toEqual({ state: "placeholder_refund", refundTo: placeholder });
+    expect(refundSteps(f, v, CONFIG)).toEqual([]);
+  });
+
+  it("a Bitcoin refund must be requested while the bridge's light client still has the deposit's block (52,704 blocks, about 366 days)", () => {
+    const v = btcDepositVerdict(facts(), CONFIG, CONFIRMED + DAY_S);
+    expect(v).toMatchObject({ state: "refundable", requestBySec: CONFIRMED + 52_704 * 600 });
+    expect(refundSteps(facts(), v, CONFIG)[0]?.note).toContain("Request it before about 2027-08-20");
+    expect(btcDepositVerdict(facts(), CONFIG, CONFIRMED + 52_704 * 600 + 1)).toEqual({ state: "too_old", requestBySec: CONFIRMED + 52_704 * 600 });
+  });
+
+  it("a deposit spent alone to one address after its request was deleted is refunded there, not credited", () => {
+    // The contract deletes a finished request: a refund to an address the requester named leaves only the spend.
+    const f = facts({ spentBy: { txid: "ref", inputs: 1, paysTo: ["bc1qnamedbytherequester000000000000000000"] } });
+    expect(isCredited(f)).toBe(false);
+    expect(btcDepositVerdict(f, CONFIG, CONFIRMED + 30 * DAY_S)).toEqual({ state: "refunded", refundTo: "bc1qnamedbytherequester000000000000000000", refundTx: "ref" });
   });
 });

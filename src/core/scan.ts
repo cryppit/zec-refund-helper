@@ -139,12 +139,14 @@ export interface ScanRow {
   verdict: BtcDepositVerdict["state"];
   refund: { status: "none" | "locked" | "ready" | "executed"; refundTo: string | null; unlocksAtSec: number | null; gasFeeSat: number | null };
   refundableNow: RefundableNow;
-  /** The refund address the deposit message (or, failing that, the refund request) names. */
+  /** The refund address the deposit message itself names ("none": a requester names one, with the longer lock). */
   refundAddress: RefundAddressKind;
   funding: Funding;
   /** How the scan found it: the indexer's list of transfers, the connector's refund requests, or its unavailable UTXOs. */
   source: "indexer" | "refund_request" | "unavailable_utxos";
   indexerStatus: string | null;
+  /** The bridge's own payout of a NEAR→chain withdrawal that landed on a deposit address: not a user's deposit. */
+  bridgePayout?: boolean;
 }
 
 function refundableNow(f: BtcDepositFacts, v: BtcDepositVerdict): RefundableNow {
@@ -169,7 +171,7 @@ export function scanRow(
   v: BtcDepositVerdict,
   c: RefundConfig,
   nowSec: number,
-  extra: { recipientExists: boolean | null; source: ScanRow["source"]; indexerStatus: string | null; seenAtSec?: number | null },
+  extra: { recipientExists: boolean | null; source: ScanRow["source"]; indexerStatus: string | null; seenAtSec?: number | null; bridgePayout?: boolean },
 ): ScanRow | null {
   const cause = stuckCause(f, v, c, extra.recipientExists);
   if (cause === null) return null;
@@ -190,10 +192,11 @@ export function scanRow(
     verdict: v.state,
     refund: { status, refundTo: q?.refundAddress ?? null, unlocksAtSec: unlocks, gasFeeSat: q?.gasFeeSat ?? null },
     refundableNow: refundableNow(f, v),
-    refundAddress: refundAddressKind(f.chain, f.msg?.refund_address ?? q?.refundAddress),
+    refundAddress: refundAddressKind(f.chain, f.msg?.refund_address),
     funding: f.funding,
     source: extra.source,
     indexerStatus: extra.indexerStatus,
+    ...(extra.bridgePayout ? { bridgePayout: true } : {}),
   };
 }
 
@@ -229,12 +232,16 @@ export interface ChainSummary {
   shieldedFunded: number;
   /** Zcash: stuck deposits whose refund address has an Orchard receiver and no transparent one. */
   shieldedOnlyRefundAddress: number;
+  /** Bridge payouts of NEAR→chain withdrawals that landed on deposit addresses: uncredited, but not user deposits. */
+  bridgePayoutCount: number;
+  bridgePayoutSat: number;
 }
 
 export function summarize(rows: ScanRow[], usd: Record<UtxoChain, number>): Record<UtxoChain, ChainSummary> {
   const one = (chain: UtxoChain): ChainSummary => {
     const all = rows.filter((r) => r.chain === chain);
-    const stuck = all.filter((r) => r.cause !== "pending");
+    const payouts = all.filter((r) => r.bridgePayout === true);
+    const stuck = all.filter((r) => r.cause !== "pending" && r.bridgePayout !== true);
     const pending = all.filter((r) => r.cause === "pending");
     const sum = (xs: ScanRow[]): number => xs.reduce((s, r) => s + r.amountSat, 0);
     const byCause: ChainSummary["byCause"] = {};
@@ -265,6 +272,8 @@ export function summarize(rows: ScanRow[], usd: Record<UtxoChain, number>): Reco
       oldest: oldest ? { txid: oldest.txid, vout: oldest.vout, ageSec: oldest.ageSec, amountSat: oldest.amountSat } : null,
       shieldedFunded: stuck.filter((r) => r.funding.kind !== "transparent").length,
       shieldedOnlyRefundAddress: stuck.filter((r) => r.refundAddress === "shielded_only").length,
+      bridgePayoutCount: payouts.length,
+      bridgePayoutSat: sum(payouts),
     };
   };
   return { btc: one("btc"), zcash: one("zcash") };

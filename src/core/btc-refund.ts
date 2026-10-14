@@ -69,6 +69,8 @@ export interface BtcDepositFacts {
   confirmedAtSec: number | null;
   /** Addresses that funded the transaction. */
   senders: string[];
+  /** How many outputs the deposit transaction has: many means a batch payout (an exchange or service paying customers). */
+  outputs?: number;
   /** The bridge's record for the deposit address, already checked against the contract; null: not a deposit address. */
   msg: DepositMsg | null;
   /** The coin is in the bridge's own UTXO set (`list_utxos`): it was credited. */
@@ -89,6 +91,10 @@ export type BtcDepositVerdict =
   | { state: "not_a_deposit" }
   | { state: "credited"; orderAccount: string }
   | { state: "absorbed"; minDepositSat: number }
+  /** The deposit message pins the refund to a public example address: the bridge can only refund there. */
+  | { state: "placeholder_refund"; refundTo: string }
+  /** Bitcoin: the bridge's light client no longer has the deposit's block, so `request_refund` fails. */
+  | { state: "too_old"; requestBySec: number }
   | { state: "refunded"; refundTo: string; refundTx: string }
   | { state: "crediting"; stuckAfterSec: number }
   | {
@@ -103,6 +109,10 @@ export type BtcDepositVerdict =
       feeSat: number;
       /** Funded from a shielded pool only: there is no transparent sender to fall back on. */
       noTransparentSender: boolean;
+      /** The single sender paid a batch of outputs: an exchange's or service's wallet, so the user names their own. */
+      batchSender: boolean;
+      /** Bitcoin: request before this time, while the bridge's light client still has the deposit's block. */
+      requestBySec: number | null;
     }
   | { state: "requested"; refundTo: string; unlocksAtSec: number }
   | { state: "ready"; refundTo: string; unlockedAtSec: number }
@@ -166,16 +176,46 @@ export function receiverOf(msg: DepositMsg): string {
 const isRefundOf = (spent: NonNullable<BtcDepositFacts["spentBy"]>, refundTo: string | null): boolean =>
   refundTo !== null && spent.inputs === 1 && spent.paysTo.length > 0 && spent.paysTo.every((a) => a === refundTo);
 
-/** Where a refund would go: the request's address, else the deposit's own, else its single sender. */
+/**
+ * A spend of the deposit alone to one address. The bridge spends coins together, with change back to itself; a refund
+ * spends one coin to one address. Once a refund finishes the contract deletes its request, so for an address the
+ * requester named this shape is all that is left to tell it from a credit.
+ */
+const loneSpendTo = (spent: NonNullable<BtcDepositFacts["spentBy"]>): string | null => {
+  const to = new Set(spent.paysTo);
+  return spent.inputs === 1 && to.size === 1 ? (spent.paysTo[0] ?? null) : null;
+};
+
+/** A transaction paying more outputs than a payment and its change is a batch: its sender is not the depositor. */
+const BATCH_OUTPUTS = 3;
+const isBatch = (f: BtcDepositFacts): boolean => f.outputs !== undefined && f.outputs >= BATCH_OUTPUTS;
+
+/**
+ * Example addresses from documentation and tutorials. A deposit message that pins its refund to one sends the refund
+ * to an address the depositor does not control (bc1qxy2…: 1,142 transactions from unrelated payers, found 2026-10-14).
+ */
+const PLACEHOLDER_REFUND_ADDRESSES: ReadonlySet<string> = new Set([
+  "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+  "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+  "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+]);
+
+/**
+ * How long a Bitcoin refund can still be requested: btc-client.bridge.near keeps the last 52,704 blocks (about 366
+ * days at 10 minutes a block; checked 2026-10-14), and `request_refund` proves the deposit against it.
+ */
+export const BTC_REQUEST_WINDOW_SEC = 52_704 * 600;
+
+/** Where a refund would go: the request's address, else the deposit's own, else its single sender unless it paid a batch. */
 function refundAddressOf(f: BtcDepositFacts): string | null {
-  return f.request?.refundAddress ?? f.msg?.refund_address ?? (f.senders.length === 1 ? (f.senders[0] ?? null) : null);
+  return f.request?.refundAddress ?? f.msg?.refund_address ?? (f.senders.length === 1 && !isBatch(f) ? (f.senders[0] ?? null) : null);
 }
 
-/** The bridge took the deposit in: it holds the coin, or it has spent it in a transaction that is not the refund. */
+/** The bridge took the deposit in: it holds the coin, or it has spent it in a transaction that is not a refund. */
 export function isCredited(f: BtcDepositFacts): boolean {
   if (!f.msg || f.absorbed) return false;
   if (f.bridgeHolds) return true;
-  return f.spentBy !== null && !isRefundOf(f.spentBy, refundAddressOf(f));
+  return f.spentBy !== null && !isRefundOf(f.spentBy, refundAddressOf(f)) && loneSpendTo(f.spentBy) === null;
 }
 
 export function btcDepositVerdict(f: BtcDepositFacts, c: RefundConfig, nowSec: number): BtcDepositVerdict {
@@ -186,7 +226,11 @@ export function btcDepositVerdict(f: BtcDepositFacts, c: RefundConfig, nowSec: n
 
   const fromDeposit = f.msg.refund_address ?? null;
   const knownRefundTo = refundAddressOf(f);
-  if (f.spentBy && knownRefundTo) return { state: "refunded", refundTo: knownRefundTo, refundTx: f.spentBy.txid };
+  if (f.spentBy) {
+    const to = knownRefundTo !== null && isRefundOf(f.spentBy, knownRefundTo) ? knownRefundTo : (loneSpendTo(f.spentBy) ?? knownRefundTo);
+    if (to) return { state: "refunded", refundTo: to, refundTx: f.spentBy.txid };
+  }
+  if (fromDeposit !== null && PLACEHOLDER_REFUND_ADDRESSES.has(fromDeposit) && !f.request) return { state: "placeholder_refund", refundTo: fromDeposit };
 
   if (f.request) {
     if (f.request.executed) return { state: "executed", refundTo: f.request.refundAddress };
@@ -198,6 +242,8 @@ export function btcDepositVerdict(f: BtcDepositFacts, c: RefundConfig, nowSec: n
 
   const stuckAfter = f.confirmedAtSec + STUCK_AFTER_SEC;
   if (nowSec < stuckAfter) return { state: "crediting", stuckAfterSec: stuckAfter };
+  const requestBySec = f.chain === "btc" ? f.confirmedAtSec + BTC_REQUEST_WINDOW_SEC : null;
+  if (requestBySec !== null && nowSec > requestBySec) return { state: "too_old", requestBySec };
   return {
     state: "refundable",
     refundTo: knownRefundTo,
@@ -207,6 +253,8 @@ export function btcDepositVerdict(f: BtcDepositFacts, c: RefundConfig, nowSec: n
     tooSmall: f.amountSat <= c.refundFeeSat,
     feeSat: c.refundFeeSat,
     noTransparentSender: f.funding.kind === "shielded" && f.senders.length === 0,
+    batchSender: fromDeposit === null && f.senders.length === 1 && isBatch(f),
+    requestBySec,
   };
 }
 
@@ -222,6 +270,10 @@ const near = (yocto: bigint): string => {
   return frac ? `${whole}.${frac}` : whole.toString();
 };
 const days = (sec: number): string => `${Math.round(sec / 86_400)} days`;
+const dateOf = (sec: number): string => new Date(sec * 1000).toISOString().slice(0, 10);
+/** The request-by sentence for a Bitcoin refund (the light client's window), empty elsewhere. */
+const requestBy = (v: Extract<BtcDepositVerdict, { state: "refundable" }>): string =>
+  v.requestBySec === null ? "" : ` Request it before about ${dateOf(v.requestBySec)}: after that the bridge's light client no longer has the deposit's block and the request fails.`;
 
 /**
  * The official commands (Near-One/bridge-sdk-rs bridge-cli README, "Refund a never-finalized BTC deposit") for what is
@@ -281,6 +333,22 @@ export function refundSteps(f: BtcDepositFacts, v: BtcDepositVerdict, c: RefundC
   const requestCmd = `bridge-cli mainnet btc-request-refund --chain ${f.chain} --btc-tx-hash ${f.txid} --vout ${f.vout}`;
   const wait: RefundStep = { title: `Wait ${days(v.lockSec)} for the timelock` };
 
+  if (v.refundTo === null && v.batchSender) {
+    // An exchange or service paid this deposit in a batch: its wallet is not the user's, so the user names their own.
+    const own = f.chain === "btc" ? "<your own Bitcoin address>" : "<your own Zcash address>";
+    const execute = executeStep(f, null, c);
+    return [
+      {
+        title: `Request the refund to your own address (${near(c.requestDepositYocto)} NEAR, not returned)`,
+        command: `${requestCmd} --refund-address ${own}`,
+        note: `This deposit came in a batch payout of ${f.outputs ?? "many"} outputs, so its sender is the wallet of the exchange or service that paid it out, not yours, and the deposit names no refund address. Name an address you control. The contract, and this tool, cannot check that the address is yours: the ${days(v.lockSec)} lock gives the bridge's DAO or operator time to reject a false claim.${requestBy(v)}`,
+      },
+      wait,
+      ...(execute ? [execute] : []),
+      sign,
+    ];
+  }
+
   if (v.refundTo === null) {
     // Only a Zcash deposit funded from a shielded pool, with no refund address in it, gets steps without an address:
     // the depositor names their own. Several transparent senders: we cannot tell which is the user's.
@@ -306,9 +374,10 @@ export function refundSteps(f: BtcDepositFacts, v: BtcDepositVerdict, c: RefundC
     {
       title: request,
       command: `${requestCmd}${named}`,
-      note: v.refundToFromDeposit
-        ? "The deposit itself names the refund address, so the refund can only go there."
-        : "The deposit names no refund address: the request names your sending wallet, and the bridge may reject a request it finds suspicious during the lock.",
+      note:
+        (v.refundToFromDeposit
+          ? "The deposit itself names the refund address, so the refund can only go there."
+          : "The deposit names no refund address: the request names your sending wallet, and the bridge may reject a request it finds suspicious during the lock.") + requestBy(v),
     },
     wait,
     execute,

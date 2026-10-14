@@ -338,6 +338,7 @@ export async function btcDepositFacts(raw: string, clients: BtcRefundClient | Bt
     depositAddress: out?.address ?? "",
     confirmedAtSec: tx.confirmedAtSec,
     senders: tx.senders,
+    outputs: tx.outputs.length,
     msg: found.msg,
     bridgeHolds: held,
     absorbed,

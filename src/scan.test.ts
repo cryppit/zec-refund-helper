@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { cursorAt } from "./core/scan.js";
 import { renderScanText } from "./render-scan.js";
-import { accountExists, indexerStatus, mergeSegments, pacedFetch, scanCandidates, walkSegment, type WalkResult } from "./scan.js";
+import { accountExists, indexerLookup, indexerStatus, mergeSegments, pacedFetch, scanCandidates, walkSegment, type WalkResult } from "./scan.js";
 
 const fx = (name: string): string => readFileSync(new URL(`./fixtures/btc-refund/${name}`, import.meta.url), "utf8");
 const json = (body: string, status = 200): Response => new Response(body, { status, headers: { "content-type": "application/json" } });
@@ -189,5 +189,15 @@ describe("indexerStatus", () => {
   it("reads the deposit's own record when the Bitcoin transaction also finalised a withdrawal (4b58625f…@0, recorded 2026-10-14)", async () => {
     // The indexer lists the NEAR→BTC withdrawal (Settled) first and the BTC→NEAR deposit (Initialised) second.
     expect(await indexerStatus(recordedFetch(), "btc", SHARED, 0)).toBe("Initialised");
+  });
+});
+
+describe("indexerLookup", () => {
+  it("knows a deposit that is the bridge's own payout: a NEAR→BTC withdrawal paid into a deposit address (4b58625f…@0)", async () => {
+    expect(await indexerLookup(recordedFetch(), "btc", SHARED, 0)).toEqual({ status: "Initialised", bridgePayout: true });
+  });
+
+  it("an ordinary deposit is not a bridge payout", async () => {
+    expect(await indexerLookup(recordedFetch(), "btc", STUCK, 0)).toEqual({ status: "Initialised", bridgePayout: false });
   });
 });
