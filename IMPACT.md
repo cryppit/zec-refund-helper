@@ -9,9 +9,9 @@ and every deposit is listed with its transaction hash so anyone can check it on 
 | | Bitcoin (`btc-connector.bridge.near`, v0.9.6) | Zcash (`zcash-connector.bridge.near`, v0.9.7-rc.3) |
 |---|---|---|
 | Stuck deposits | **570**, **6.36170296 BTC** (**$530,528**) | **51**, **0.02262864 ZEC** (**$27.28**) |
-| Never credited, sitting at a deposit address | 28, 6.35425388 BTC | 0 |
+| Never credited, sitting at a deposit address | 28, 6.35425388 BTC: **27 user deposits, 6.35414319 BTC**, and 1 bridge payout (an end-to-end test, 0.00011069 BTC) | 0 |
 | Absorbed below the minimum (no refund path at all) | 542, 0.00744908 BTC | 51, 0.02262864 ZEC |
-| Refundable now through the bridge's own refund | **25, 6.25874412 BTC ($521,942)** | 0 |
+| Recoverable by their senders through the bridge's own refund (verified 2026-10-14) | **24, 6.30408319 BTC ($525,723)** | 0 |
 | Refund requests past their lock, never executed | 1: `9deffb31…@0`, 0.09997900 BTC, ready since 2026-09-02 | 0 |
 | Pending (inside the 6-hour crediting window, not counted) | 5, 0.05417639 BTC | 0 |
 
@@ -19,10 +19,12 @@ Prices: CoinGecko `simple/price` (keyless), BTC $83,394 (2026-10-13 16:53 UTC), 
 
 What it means:
 
-- **Bitcoin:** 6.35 BTC (about $530,000) sits at 28 bridge deposit addresses, confirmed on Bitcoin, never credited on
-  NEAR and never refunded. 25 of those deposits (6.26 BTC) can be refunded today through the connector's own
-  permissionless `request_refund` (24 of them) or `execute_refund` (1). Two deposits alone are 1.998 BTC (12 days old) and
-  1.8 BTC (138 days old). One refund (0.1 BTC) has been ready for 41 days and nobody has executed it.
+- **Bitcoin:** 6.35 BTC (about $530,000) sits at 27 user deposits to bridge deposit addresses, confirmed on Bitcoin,
+  never credited on NEAR and never refunded. 24 of them (6.30 BTC) can be recovered by their senders through the
+  connector's own permissionless refund; 3 cannot (one names a public example address as its refund address, two are
+  no larger than the refund fee). Two deposits alone are 1.998 BTC (12 days old) and 1.8 BTC (138 days old). One
+  refund (0.1 BTC) has been ready for 41 days and nobody has executed it. The total is growing: two of the five
+  deposits pending at the snapshot were still uncredited 9 to 13 hours later (another 0.05093722 BTC).
 - **Zcash:** no ZEC deposit sits uncredited at a deposit address. Every uncredited ZEC deposit is one the
   connector absorbed below its 0.001 ZEC minimum. That money is small (0.0226 ZEC), but nobody can recover it today,
   and 32 of the 51 deposits came out of a shielded pool.
@@ -30,6 +32,34 @@ What it means:
   `min_deposit_amount` as an "unavailable UTXO", mark it verified and mint nothing. `request_refund` refuses verified
   deposits, and no method spends or releases an unavailable UTXO, so these coins are locked until the contract changes
   (both deployed versions, see "Why absorbed deposits cannot be refunded").
+
+## Independent verification (2026-10-14)
+
+Every one of the 28 was re-checked by hand from primary sources, separately from the scan
+(`research_notes/Stuck BTC verification` in Cryppit's notes; recheck at 2026-10-14 00:58 UTC):
+
+- **On Bitcoin:** each is a confirmed output (237 to 46,709 confirmations); mempool.space and blockstream.info agree on
+  block, address and amount, and both show it unspent.
+- **The address is the bridge's:** `btc-connector.bridge.near` itself derives each deposit address from the deposit
+  message (`get_user_deposit_address`, 28 of 28).
+- **Not credited:** none is in the connector's `list_utxos`, `utxos_in_progress` or `list_unavailable_utxos`, and no
+  NEAR account received it another way.
+- **The deployed code is the published release:** the connectors' code hashes equal the `btc-bridge-v0.9.6` and
+  `btc-bridge-v0.9.7-rc3` release builds.
+
+What the verification changed (the tool is fixed accordingly):
+
+- `4b58625f…@0` is not a user's deposit: it is the bridge's own payout of a NEAR→BTC withdrawal, an end-to-end test,
+  paid to a deposit address. The scan now counts such payouts apart.
+- `8fc88d4e…@0` (0.05 BTC) names `bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh` as its refund address: a public example
+  address from documentation, with 1,142 transactions from unrelated payers. The bridge can only refund there, so its
+  sender cannot recover it.
+- `81ed1be3…@19`, `81ed1be3…@17` and `06bfb7fd…@2` came in an exchange's batch payout (22 outputs): their single sender
+  is the exchange's hot wallet, not the user's. The tool no longer suggests it; the user names their own address.
+- Bitcoin refunds must be requested while the bridge's light client (`btc-client.bridge.near`, the last 52,704 blocks)
+  still has the deposit's block: `993d7056…@0` and `10906dfa…@1` must be requested by about 2026-11-24.
+- The "Refund address in deposit" column showed the refund request's address for `9deffb31…@0` and `f25e17c3…@0`; their
+  deposits name none (which is why both have the 14-day lock).
 
 ## Method
 
