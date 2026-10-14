@@ -33,8 +33,9 @@ describe("renderBtcRefundText", () => {
     expect(text).toContain(`For NEAR account  ${ORDER}`);
     expect(text).toContain("READY TO REFUND  the refund was requested on 2026-08-19 and its lock ended on 2026-09-02; nobody has executed it yet");
     expect(text).toContain(`The bridge can only send it to ${SENDER}.`);
-    expect(text).toContain("1. Execute the refund (1 NEAR)");
-    expect(text).toContain("2. Have the bridge sign the Bitcoin refund");
+    expect(text).toContain("1. Let near-cli sign as your NEAR account (once)\n   near account import-account using-web-wallet network-config mainnet");
+    expect(text).toContain("2. Execute the refund (1 NEAR, not returned)");
+    expect(text).toContain("3. Have the bridge sign the Bitcoin refund");
     expect(text).toContain("If the near CLI shows an error or a timeout, look the transaction up on nearblocks.io before sending it again: it may have gone through.");
     expect(text).toContain("We never hold keys");
   });
@@ -49,7 +50,7 @@ describe("renderBtcRefundText", () => {
   it("a stuck deposit nobody has asked about yet", () => {
     const text = report({ ...FACTS, request: null }, 1_791_900_000);
     expect(text).toContain("STUCK  confirmed 2026-08-19 and never credited on NEAR");
-    expect(text).toContain("1. Request the refund (2 NEAR, not returned)");
+    expect(text).toContain("2. Request the refund (2 NEAR, not returned)");
     expect(text).toContain(`--refund-address ${SENDER}`);
   });
 
@@ -65,6 +66,12 @@ describe("renderBtcRefundText", () => {
     expect(text).toContain("Zcash deposit     9deffb31");
     expect(text).toContain("0.41000000 ZEC from");
     expect(text).toContain("zcash-connector.bridge.near");
+  });
+
+  it("a Bitcoin deposit older than the light client's year: too old to request", () => {
+    expect(report({ ...FACTS, request: null }, FACTS.confirmedAtSec! + 367 * 86_400)).toContain(
+      "TOO OLD TO REQUEST  the bridge's light client keeps about a year of Bitcoin blocks and no longer has this deposit's (since about 2027-08-20), so request_refund fails.",
+    );
   });
 
   it("credited and not-a-deposit headlines", () => {
@@ -111,10 +118,11 @@ describe("renderBtcRefundText for Zcash", () => {
     expect(text).toContain("the coin can only go to the address named in the request.");
   });
 
-  it("a transparent t-address refund: execute with --transparent", () => {
+  it("a transparent t-address refund: execute with near-cli, no Orchard bundle", () => {
     const text = zreport({ ...ZFACTS, senders: ["t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1"], funding: { kind: "transparent", pools: [] }, msg: { recipient_id: "intents.near", refund_address: "t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1" } });
     expect(text).toContain("t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1, a transparent t-address.");
-    expect(text).toContain("--vout 0 --transparent");
+    expect(text).toContain("A transparent refund: execute_refund pays this address one ordinary output, with no Orchard bundle, so near-cli can send it.");
+    expect(text).toContain(`near contract call-function as-transaction zcash-connector.bridge.near execute_refund json-args '{"utxo_storage_key":"${ZFACTS.txid}@0","chain_specific_data":null}'`);
   });
 
   it("a 0.0005 ZEC deposit is below the minimum but refundable: the fee is 10,000 zatoshis, not the 0.01 ZEC cap", () => {
@@ -122,7 +130,7 @@ describe("renderBtcRefundText for Zcash", () => {
     expect(text).toContain("below the bridge's 100000-zatoshi minimum deposit");
     expect(text).toContain("A refund returns 0.00040000 ZEC: the deposit minus the 10000-zatoshi refund fee (the ZIP-317 minimum the Zcash connector charges).");
     expect(text).not.toContain("would return nothing");
-    expect(text).toContain("1. Request the refund");
+    expect(text).toContain("2. Request the refund");
   });
 
   it("a deposit no larger than the fee cannot be refunded", () => {
@@ -138,12 +146,18 @@ describe("renderBtcRefundText for Zcash", () => {
     expect(text).not.toContain("1. ");
   });
 
+  it("a stuck deposit older than the Zcash light client's 90 days: too old to request, no steps", () => {
+    const text = zreport(ZFACTS, ZFACTS.confirmedAtSec! + 91 * 86_400);
+    expect(text).toContain("TOO OLD TO REQUEST  the bridge's light client keeps about 90 days of Zcash blocks and no longer has this deposit's (since about 2026-11-17), so request_refund fails.");
+    expect(text).not.toContain("1. ");
+  });
+
   it("a ready request: what it returns after the fee stored on the request", () => {
     const request = { refundAddress: UA, amountSat: 5_000_000_000, createdAtSec: 1_791_000_000, executed: false, msgHasRefundAddress: true, gasFeeSat: 10_000 };
     const text = zreport({ ...ZFACTS, request });
     expect(text).toContain("READY TO REFUND");
     expect(text).toContain("A refund returns 49.99990000 ZEC: the deposit minus the 10000-zatoshi fee stored on the request.");
-    expect(text).toContain("1. Execute the refund, shielded (1 NEAR)");
+    expect(text).toContain("2. Execute the refund, shielded (1 NEAR, not returned)");
   });
 });
 

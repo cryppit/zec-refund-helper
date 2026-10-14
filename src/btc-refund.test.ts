@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { checkBtcDeposit, checkRefundBoard, publicBtcRefundClient, publicUtxoRefundClients } from "./btc-refund.js";
+import { nearCliCommand, refundCalls } from "./core/refund-calls.js";
 
 const fx = (name: string): string => readFileSync(new URL(`./fixtures/btc-refund/${name}`, import.meta.url), "utf8");
 const json = (body: string): Response => new Response(body, { status: 200, headers: { "content-type": "application/json" } });
@@ -110,7 +111,11 @@ describe("checkBtcDeposit", () => {
     expect(r.verdict).toEqual({ state: "ready", refundTo: "bc1qyp0a54gjhej46zdztq5w0ux2waqg3kacls7q2t", unlockedAtSec: 1_787_161_227 + 1_209_600 });
     expect(r.orderAccount).toBe("f3de655c605a4ca01e000e7961a969687678efaf3bd6c6dff13cea3cb50ab807");
     expect(r.config).toMatchObject({ refundTimelockSec: 172_800, unsafeRefundTimelockSec: 1_209_600, minDepositSat: 2_500, maxGasFeeSat: 5_000, refundFeeSat: 5_000, requestDepositYocto: 2n * 10n ** 24n, executeDepositYocto: 10n ** 24n });
-    expect(r.steps.map((s) => s.title)).toEqual(["Execute the refund (1 NEAR)", "Have the bridge sign the Bitcoin refund"]);
+    expect(r.steps.map((s) => s.title)).toEqual(["Let near-cli sign as your NEAR account (once)", "Execute the refund (1 NEAR, not returned)", "Have the bridge sign the Bitcoin refund"]);
+    // The wallet call a /refund button would send, from the same live config: 1 NEAR read from required_balance_for_execute_refund.
+    const calls = refundCalls(r.facts, r.verdict, r.config);
+    expect(calls).toEqual([{ receiverId: "btc-connector.bridge.near", methodName: "execute_refund", args: { utxo_storage_key: `${STUCK}@0`, chain_specific_data: null }, gas: "250000000000000", deposit: "1000000000000000000000000" }]);
+    expect(r.steps[1]?.command).toBe(nearCliCommand(calls[0]!));
   });
 
   it("calls a deposit credited once the bridge has spent the coin in its own transaction", async () => {
@@ -174,8 +179,14 @@ describe("checkBtcDeposit", () => {
     const r = await checkBtcDeposit(ZEC_SHIELDED, publicUtxoRefundClients(notHeld), NOW + 86_400);
     if ("error" in r) throw new Error(r.error);
     expect(r.verdict).toMatchObject({ state: "refundable", refundToFromDeposit: true, noTransparentSender: true, tooSmall: false, feeSat: 10_000 });
-    expect(r.steps.map((s) => s.title)).toEqual(["Request the refund (2 NEAR, not returned)", "Wait 2 days for the timelock", "Execute the refund, shielded (1 NEAR)", "Have the bridge sign the Zcash refund"]);
-    expect(r.steps[2]?.command).toBe(`bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${ZEC_SHIELDED} --vout 0`);
+    expect(r.steps.map((s) => s.title)).toEqual([
+      "Let near-cli sign as your NEAR account (once)",
+      "Request the refund (2 NEAR, not returned)",
+      "Wait 2 days for the timelock",
+      "Execute the refund, shielded (1 NEAR, not returned)",
+      "Have the bridge sign the Zcash refund",
+    ]);
+    expect(r.steps[3]?.command).toBe(`bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${ZEC_SHIELDED} --vout 0`);
   });
 
   it("a real Zcash deposit below the minimum: the bridge verified it into unavailable_utxos and minted nothing, so it is absorbed, not credited", async () => {

@@ -42,13 +42,18 @@ Given a 64-hex transaction hash, it:
 6. Classifies the refund address (ZIP-316 parsing, no dependencies: Bech32m, F4Jumble with BLAKE2b, the receiver
    typecodes; tested against the official zcash-test-vectors): a transparent t-address, a TEX address, a unified
    address and its receivers (Orchard, Sapling, transparent), or a Sapling or Sprout z-address.
-7. For a stuck deposit, prints the commands left to run, with live fees and timelocks:
-   **request** (`bridge-cli … btc-request-refund`), then **wait for the lock**, then **execute**, then **sign**
-   (`bridge-cli … near-sign-btc-transaction`: NEAR's MPC network signs the Zcash refund transaction and the bridge's
-   relayer broadcasts it). On Zcash, execute is `bridge-cli mainnet btc-execute-refund --chain zcash`:
-   - to a unified address with an Orchard receiver, bridge-cli's default builds an **Orchard bundle** and the refund
-     is shielded (since NU6.3 it lands in the Ironwood pool);
-   - to a t-address, `--transparent` pays one ordinary output;
+7. For a stuck deposit, prints the commands left to run, with live fees and timelocks: first the one line that lets
+   near-cli sign as your NEAR account (`near account import-account using-web-wallet network-config mainnet`), then
+   **request** (`bridge-cli … btc-request-refund`, which builds the deposit's inclusion proof), **wait for the lock**,
+   **execute**, and **sign** (`sign_btc_transaction` with near-cli, or `bridge-cli … near-sign-btc-transaction`:
+   NEAR's MPC network signs the Zcash refund transaction and the bridge's relayer broadcasts it). Each step says how
+   much NEAR the signing account needs, the deposit plus the gas NEAR holds upfront at 0.001 NEAR per Tgas (a little
+   over 2.3 NEAR to request, 1.25 to execute, 0.25 to sign), and that the 2 NEAR and 1 NEAR deposits are not returned:
+   attach exactly what the command attaches, since the contract keeps anything extra too. On Zcash the execute
+   depends on the refund address:
+   - to a unified address with an Orchard receiver, `bridge-cli mainnet btc-execute-refund --chain zcash` builds an
+     **Orchard bundle** and the refund is shielded (since NU6.3 it lands in the Ironwood pool);
+   - to a t-address, near-cli's `execute_refund` with no bundle pays one ordinary output;
    - to an address with neither an Orchard nor a transparent receiver (a Sapling `zs1…` address, for example) the
      connector cannot pay at all, and the tool says so instead of printing commands.
 
@@ -111,6 +116,14 @@ nothing. `request_refund` refuses any verified deposit, and no method spends or 
 deposit can neither be credited nor refunded by anyone; only a contract change can release it. Earlier versions of
 this tool counted it as credited; it is now its own verdict, `absorbed`. (A below-minimum deposit that no relayer has
 verified yet is still refundable.)
+
+### Request it within 90 days
+
+`request_refund` proves the deposit against the bridge's light client for its chain on NEAR, which keeps only its
+newest blocks. `zcash-client.bridge.near` keeps 103,680 Zcash blocks: 90 days at 75 seconds a block (checked
+2026-10-14: `get_mainchain_size` 103,680, and `get_block_hash_by_height` has block 3,413,659 but not 3,413,658).
+Bitcoin's keeps 52,704 blocks, about a year. The tool prints the date to request by, and after it the verdict
+`too_old` with no commands: the request would fail, and the contract takes the 2 NEAR before it checks the proof.
 
 ## Custody and trust model
 
@@ -187,8 +200,9 @@ return the fields that source defines.
 - **The scan is a lower bound.** It sees deposits the indexer lists (from 2026-06-25) and deposits with a refund
   request. A deposit to an address the indexer never handed out, or an older one nobody requested a refund for, is
   not seen.
-- **No signing by design.** You still need `bridge-cli` (Near-One/bridge-sdk-rs) or the `near` CLI and a NEAR account
-  with a few NEAR for the request (2 NEAR, not returned) and the execution (1 NEAR) deposits.
+- **No signing by design.** You still need `bridge-cli` (Near-One/bridge-sdk-rs) for the request and a shielded
+  execute, the `near` CLI for the rest, and a NEAR account with a little more NEAR than each deposit: 2 NEAR to request
+  and 1 NEAR to execute, both kept by the contract, plus up to 0.3 NEAR held for gas while a call runs.
 - **Mainnet only.** The connector accounts and RPC endpoint are hard-coded for mainnet.
 - Only Omni bridge deposits. A deposit through the PoA bridge or a NEAR Intents order account is checked in
   Where's My Swap instead.

@@ -2,7 +2,7 @@
 
 import type { BtcDepositReport } from "./btc-refund.js";
 import { describeDuration } from "./core/duration.js";
-import { refundPath, UTXO_CHAINS, type BoardRow, type BtcDepositFacts, type UtxoChain } from "./core/btc-refund.js";
+import { refundPath, REQUEST_WINDOW, UTXO_CHAINS, type BoardRow, type BtcDepositFacts, type UtxoChain } from "./core/btc-refund.js";
 import { classifyZcashAddress, describeZcashAddress } from "./core/zcash-address.js";
 
 type Report = Exclude<BtcDepositReport, { error: string }>;
@@ -39,7 +39,7 @@ function zcashRefundLines(address: string): string[] {
       `The Zcash connector cannot pay ${describeZcashAddress(a)}: a refund is either one transparent output or an Orchard bundle, and this address has neither a transparent nor an Orchard receiver. A refund request to it would be accepted but could never be executed, so ask the Omni bridge team for help instead of paying for one.`,
     ];
   }
-  if (path === "transparent") return ["A transparent refund: execute_refund pays this address one ordinary output (bridge-cli --transparent)."];
+  if (path === "transparent") return ["A transparent refund: execute_refund pays this address one ordinary output, with no Orchard bundle, so near-cli can send it."];
   const why =
     "The contract cannot write a shielded output by itself: an Orchard output needs a zero-knowledge proof made off-chain. So bridge-cli builds the Orchard bundle (the proof, the encrypted note, the exact amount) and passes it to execute_refund; the contract checks that it pays this address's Orchard receiver the deposit minus the fee, then NEAR's MPC network signs the deposit input. The refund lands in the shielded pool (the Ironwood pool since NU6.3): your address and what you do next with the ZEC stay off the transparent chain. The deposit and the refunded amount stay visible, as value entering a shielded pool always is.";
   if (a.refund.transparent) return [`This address also has a transparent receiver. bridge-cli refunds to its Orchard receiver by default (shielded); --transparent pays its transparent receiver instead, in public. ${why}`];
@@ -87,7 +87,7 @@ function headline(r: Report): string[] {
       ];
     case "too_old":
       return [
-        `TOO OLD TO REQUEST  the bridge's light client keeps about a year of ${name} blocks and no longer has this deposit's (since about ${new Date(v.requestBySec * 1000).toISOString().slice(0, 10)}), so request_refund fails.`,
+        `TOO OLD TO REQUEST  the bridge's light client keeps ${REQUEST_WINDOW[f.chain].span} of ${name} blocks and no longer has this deposit's (since about ${day(v.requestBySec)}), so request_refund fails.`,
         "Only the Omni bridge team can recover it; this tool has no commands to give.",
       ];
     case "refunded":

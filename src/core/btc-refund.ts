@@ -4,14 +4,30 @@
 // execute_refund, MPC signing) that sends the coin back to the deposit's refund address. Anyone may pay for these
 // calls; the contract only ever pays the refund address, so we never need, see or hold a key.
 
+import {
+  BRIDGE_CLI_GAS,
+  CONNECTOR,
+  executeRefundCall,
+  formatNear,
+  GAS_BUY_PRICE_YOCTO,
+  NEAR_CLI_SIGN_IN,
+  nearCliCommand,
+  PENDING_ID_PLACEHOLDER,
+  REFUND_CALL_GAS,
+  refundPath,
+  SIGNER_PLACEHOLDER,
+  signRefundCall,
+  upfrontYocto,
+  type UtxoChain,
+} from "./refund-calls.js";
 import { classifyZcashAddress } from "./zcash-address.js";
 
-export type UtxoChain = "btc" | "zcash";
+export { refundPath, type UtxoChain };
 
 /** Each UTXO chain's connector contract and how to name its coin (both count in 1e-8 units). */
 export const UTXO_CHAINS: Record<UtxoChain, { connector: string; name: string; unit: string; minor: string }> = {
-  btc: { connector: "btc-connector.bridge.near", name: "Bitcoin", unit: "BTC", minor: "satoshis" },
-  zcash: { connector: "zcash-connector.bridge.near", name: "Zcash", unit: "ZEC", minor: "zatoshis" },
+  btc: { connector: CONNECTOR.btc, name: "Bitcoin", unit: "BTC", minor: "satoshis" },
+  zcash: { connector: CONNECTOR.zcash, name: "Zcash", unit: "ZEC", minor: "zatoshis" },
 };
 export const BTC_CONNECTOR = UTXO_CHAINS.btc.connector;
 
@@ -93,7 +109,7 @@ export type BtcDepositVerdict =
   | { state: "absorbed"; minDepositSat: number }
   /** The deposit message pins the refund to a public example address: the bridge can only refund there. */
   | { state: "placeholder_refund"; refundTo: string }
-  /** Bitcoin: the bridge's light client no longer has the deposit's block, so `request_refund` fails. */
+  /** The chain's light client on NEAR no longer has the deposit's block, so `request_refund` fails (`REQUEST_WINDOW`). */
   | { state: "too_old"; requestBySec: number }
   | { state: "refunded"; refundTo: string; refundTx: string }
   | { state: "crediting"; stuckAfterSec: number }
@@ -111,7 +127,7 @@ export type BtcDepositVerdict =
       noTransparentSender: boolean;
       /** The single sender paid a batch of outputs: an exchange's or service's wallet, so the user names their own. */
       batchSender: boolean;
-      /** Bitcoin: request before this time, while the bridge's light client still has the deposit's block. */
+      /** Request before this time, while the chain's light client still has the deposit's block (`REQUEST_WINDOW`). */
       requestBySec: number | null;
     }
   | { state: "requested"; refundTo: string; unlocksAtSec: number }
@@ -143,32 +159,36 @@ export function refundFeeFor(chain: UtxoChain, maxBtcGasFeeSat: number): number 
   return chain === "zcash" ? ZCASH_REFUND_FEE_ZAT : maxBtcGasFeeSat;
 }
 
-/**
- * Which refund the connector can build to an address. Bitcoin: always a transparent output. Zcash: `shielded` when
- * it is a unified address with an Orchard receiver (bridge-cli's default Orchard bundle), `transparent` when it is a
- * t-address, a TEX address or a unified address with only a transparent receiver among those two, `none` otherwise
- * (Sapling, Sprout, a unified address with neither, or not a valid address): such a refund can never be executed.
- */
-export function refundPath(chain: UtxoChain, address: string): "transparent" | "shielded" | "none" {
-  if (chain === "btc") return "transparent";
-  const a = classifyZcashAddress(address);
-  if (!a.valid || a.network !== "main") return "none";
-  return a.refund.shielded ? "shielded" : a.refund.transparent ? "transparent" : "none";
-}
-
 /** The bridge credits within about an hour of the confirmations it needs; after this a deposit counts as stuck. */
 export const STUCK_AFTER_SEC = 6 * 3_600;
 
-/** The NEAR account the deposit was for: the order account inside a 1Click `safe_deposit` message, else the recipient. */
+/**
+ * A NEAR account id the protocol accepts (docs.near.org /web3-apps/tutorials/account-validation, the near-account-id
+ * crate): 2 to 64 characters of `a-z`, `0-9` and the separators `.` `-` `_`, never a separator at either end or two in a
+ * row. Implicit (64 hex), `0x`/`0s` (40 hex) and `0u` accounts are special cases of the same rule.
+ */
+export function isNearAccountId(id: string): boolean {
+  return /^(?=.{2,64}$)(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/.test(id);
+}
+
+/**
+ * The NEAR account the deposit was for: the order account inside a 1Click `safe_deposit` message, else the recipient.
+ * intents.near reads the message as JSON when it starts with `{` and otherwise as a bare account id
+ * (`DepositMessage::from_str`); a message that names no valid account id names nobody.
+ */
 export function receiverOf(msg: DepositMsg): string {
-  if (msg.safe_deposit) {
-    try {
-      const inner: unknown = JSON.parse(msg.safe_deposit.msg);
-      if (typeof inner === "object" && inner !== null && "receiver_id" in inner && typeof inner.receiver_id === "string") return inner.receiver_id;
-    } catch {
-      // not JSON: intents.near also takes a bare account id as the message
-      if (/^[a-z0-9._-]{2,64}$/.test(msg.safe_deposit.msg)) return msg.safe_deposit.msg;
+  const inner = msg.safe_deposit?.msg;
+  if (inner !== undefined) {
+    let id: unknown = inner;
+    if (inner.startsWith("{")) {
+      try {
+        const parsed: unknown = JSON.parse(inner);
+        id = typeof parsed === "object" && parsed !== null && "receiver_id" in parsed ? parsed.receiver_id : null;
+      } catch {
+        id = null;
+      }
     }
+    if (typeof id === "string" && isNearAccountId(id)) return id;
   }
   return msg.recipient_id;
 }
@@ -202,10 +222,20 @@ const PLACEHOLDER_REFUND_ADDRESSES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * How long a Bitcoin refund can still be requested: btc-client.bridge.near keeps the last 52,704 blocks (about 366
- * days at 10 minutes a block; checked 2026-10-14), and `request_refund` proves the deposit against it.
+ * How long a refund can still be requested. `request_refund` proves the deposit against the chain's light client on
+ * NEAR (the connector's `btc_light_client_account_id`), which keeps only its last `gc_threshold` blocks and prunes the
+ * rest; a request for a deposit whose block is gone fails. btc-client.bridge.near keeps 52,704 blocks (about 366 days
+ * at 10 minutes a block); zcash-client.bridge.near keeps 103,680 (90 days at Zcash's 75-second blocks: on 2026-10-14
+ * `get_mainchain_size` was 103,680 and `get_block_hash_by_height` had block 3,413,659 and not 3,413,658, with
+ * 3,517,338 the newest). A time estimate: `span` is how the reports word it.
  */
-export const BTC_REQUEST_WINDOW_SEC = 52_704 * 600;
+export const REQUEST_WINDOW: Record<UtxoChain, { blocks: number; blockSec: number; span: string }> = {
+  btc: { blocks: 52_704, blockSec: 600, span: "about a year" },
+  zcash: { blocks: 103_680, blockSec: 75, span: "about 90 days" },
+};
+export const requestWindowSec = (chain: UtxoChain): number => REQUEST_WINDOW[chain].blocks * REQUEST_WINDOW[chain].blockSec;
+/** The Bitcoin window alone (kept for existing callers): `requestWindowSec("btc")`. */
+export const BTC_REQUEST_WINDOW_SEC = requestWindowSec("btc");
 
 /** Where a refund would go: the request's address, else the deposit's own, else its single sender unless it paid a batch. */
 function refundAddressOf(f: BtcDepositFacts): string | null {
@@ -243,8 +273,8 @@ export function btcDepositVerdict(f: BtcDepositFacts, c: RefundConfig, nowSec: n
 
   const stuckAfter = f.confirmedAtSec + STUCK_AFTER_SEC;
   if (nowSec < stuckAfter) return { state: "crediting", stuckAfterSec: stuckAfter };
-  const requestBySec = f.chain === "btc" ? f.confirmedAtSec + BTC_REQUEST_WINDOW_SEC : null;
-  if (requestBySec !== null && nowSec > requestBySec) return { state: "too_old", requestBySec };
+  const requestBySec = f.confirmedAtSec + requestWindowSec(f.chain);
+  if (nowSec > requestBySec) return { state: "too_old", requestBySec };
   return {
     state: "refundable",
     refundTo: knownRefundTo,
@@ -265,63 +295,108 @@ export interface RefundStep {
   note?: string;
 }
 
-const near = (yocto: bigint): string => {
-  const whole = yocto / 10n ** 24n;
-  const frac = (yocto % 10n ** 24n).toString().padStart(24, "0").replace(/0+$/, "");
-  return frac ? `${whole}.${frac}` : whole.toString();
-};
 const days = (sec: number): string => `${Math.round(sec / 86_400)} days`;
 const dateOf = (sec: number): string => new Date(sec * 1000).toISOString().slice(0, 10);
-/** The request-by sentence for a Bitcoin refund (the light client's window), empty elsewhere. */
+/** The request-by sentence (the light client's window). */
 const requestBy = (v: Extract<BtcDepositVerdict, { state: "refundable" }>): string =>
   v.requestBySec === null ? "" : ` Request it before about ${dateOf(v.requestBySec)}: after that the bridge's light client no longer has the deposit's block and the request fails.`;
 
+const tgasOf = (gas: bigint): string => `${gas / 10n ** 12n} Tgas`;
+/** NEAR to two decimals, for "a little over 1.25 NEAR". */
+const aboutNear = (yocto: bigint): string => String(Number((Number(yocto) / 1e24).toFixed(2)));
+const gasHeld = (gas: bigint, by: string): string =>
+  `${aboutNear(gas * GAS_BUY_PRICE_YOCTO)} NEAR held for ${by}${tgasOf(gas)} of gas (the unused gas comes back when the call finishes)`;
 /**
- * The official commands (Near-One/bridge-sdk-rs bridge-cli README, "Refund a never-finalized BTC deposit") for what is
- * left to do. Empty when nothing is to be done, when the refund address cannot be told from the transaction (we never
- * suggest any address but the deposit's own or its single sender), or when the refund would return nothing.
+ * What the signing account must hold for a call: the deposit plus the attached gas, which NEAR buys upfront at 0.001
+ * NEAR per Tgas (`upfrontYocto`). "A little over": the transaction's own small fees and the account's storage come on top.
  */
+const needs = (depositYocto: bigint, gas: bigint, by = ""): string =>
+  ` The signing account needs a little over ${aboutNear(upfrontYocto(gas, depositYocto))} NEAR: the ${formatNear(depositYocto)} NEAR and ${gasHeld(gas, by)}.`;
+/** The contract checks `attached_deposit >= required` and keeps all of it (3 of 8 recent mainnet executes attached 2 NEAR). */
+const attachExactly = (depositYocto: bigint): string =>
+  ` Attach exactly ${formatNear(depositYocto)} NEAR, as this command does: the contract keeps all it is given, so anything more is lost.`;
+/** Zcash's execute_refund checks in a callback (it needs the light client's height first), after the deposit is taken. */
+const zcashChecksLater = (depositYocto: bigint): string =>
+  ` On Zcash the contract takes the ${formatNear(depositYocto)} NEAR before it checks the lock and the request, so a call that fails there still costs it: send it once, after the lock has passed.`;
+/** The connector's `pending_tx_limits` default: an account holds one refund awaiting its signature at a time. */
+const ONE_PENDING = " An account can have only one executed refund waiting for its signature: sign this one (next step) before executing another.";
+
 /** Placeholder for the address a shielded depositor names: we never suggest one. */
 export const OWN_UNIFIED_ADDRESS = "<your own unified address (u1…) with an Orchard receiver>";
 
 function executeStep(f: BtcDepositFacts, refundTo: string | null, c: RefundConfig): RefundStep | null {
   const key = `${f.txid}@${f.vout}`;
-  const { connector, name } = UTXO_CHAINS[f.chain];
-  const deposit = `${near(c.executeDepositYocto)} NEAR`;
+  const { name } = UTXO_CHAINS[f.chain];
+  const fee = c.executeDepositYocto;
+  const kept = `${formatNear(fee)} NEAR, not returned`;
+  // near-cli sends the same call a wallet would (core/refund-calls.ts): Bitcoin, and a transparent Zcash refund.
+  const nearCli = nearCliCommand(executeRefundCall(f.chain, key, fee));
+  const afterTaking = f.chain === "zcash" ? zcashChecksLater(fee) : "";
   if (f.chain === "btc") {
     return {
-      title: `Execute the refund (${deposit})`,
-      command: `near contract call-function as-transaction ${connector} execute_refund json-args '{"utxo_storage_key":"${key}"}' prepaid-gas '100.0 Tgas' attached-deposit '${deposit}' sign-as <your-account.near> network-config mainnet sign-with-keychain send`,
-      note: `Anyone can call this once the lock has passed; the contract builds a ${name} transaction that pays only the refund address.`,
+      title: `Execute the refund (${kept})`,
+      command: nearCli,
+      note: `Anyone can call this once the lock has passed; the contract builds a ${name} transaction that pays only the refund address.${attachExactly(fee)}${needs(fee, REFUND_CALL_GAS)}${ONE_PENDING}`,
     };
   }
   // Zcash. No address yet (a shielded depositor names theirs in the request): plan for the shielded refund.
   const path = refundTo === null ? "shielded" : refundPath(f.chain, refundTo);
   if (path === "none") return null;
-  const base = `bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${f.txid} --vout ${f.vout}`;
   if (path === "transparent") {
     return {
-      title: `Execute the refund, transparent (${deposit})`,
-      command: `${base} --transparent`,
-      note: "Anyone can call this once the lock has passed. --transparent: the contract pays the refund address with one transparent output (bridge-cli's shielded default would fail: this address has no Orchard receiver).",
+      title: `Execute the refund, transparent (${kept})`,
+      command: nearCli,
+      note: `Anyone can call this once the lock has passed. It sends no Orchard bundle (chain_specific_data null), so the contract pays the refund address one transparent output.${attachExactly(fee)}${afterTaking}${needs(fee, REFUND_CALL_GAS)}${ONE_PENDING}`,
     };
   }
+  // A shielded refund needs bridge-cli: it builds the Orchard bundle, and it attaches the live deposit itself.
   const alsoTransparent = refundTo !== null && classifyZcashAddress(refundTo).refund.transparent;
   return {
-    title: `Execute the refund, shielded (${deposit})`,
-    command: base,
+    title: `Execute the refund, shielded (${kept})`,
+    command: `bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${f.txid} --vout ${f.vout}`,
     note:
       "Anyone can call this once the lock has passed. bridge-cli builds an Orchard bundle, with its zero-knowledge proof, that pays the deposit minus the fee to the address's Orchard receiver; the contract checks that receiver and that amount before NEAR's MPC network signs the deposit input." +
-      (alsoTransparent ? " The address also has a transparent receiver: add --transparent to refund there instead (public)." : ""),
+      (alsoTransparent ? " The address also has a transparent receiver: add --transparent to refund there instead (public)." : "") +
+      `${afterTaking}${needs(fee, BRIDGE_CLI_GAS, "bridge-cli's ")}${ONE_PENDING}`,
   };
 }
 
+/** The first step whenever there are steps: near-cli signs the execute and the sign as the user's own account. */
+function signInStep(steps: RefundStep[]): RefundStep[] {
+  if (steps.length === 0) return [];
+  const bridgeCli = steps.some((s) => s.command?.startsWith("bridge-cli "));
+  return [
+    {
+      title: "Let near-cli sign as your NEAR account (once)",
+      command: NEAR_CLI_SIGN_IN,
+      note:
+        `Or using-seed-phrase or using-private-key in place of using-web-wallet. Then put your account in place of ${SIGNER_PLACEHOLDER} in the near commands below.` +
+        (bridgeCli ? " bridge-cli reads the account and its private key from NEAR_SIGNER and NEAR_PRIVATE_KEY." : ""),
+    },
+    ...steps,
+  ];
+}
+
+/**
+ * What is left to do, as commands (Near-One/bridge-sdk-rs bridge-cli README, "Refund a never-finalized BTC deposit"):
+ * bridge-cli for the request, which needs the deposit's inclusion proof, and for a shielded Zcash execute, which needs
+ * the Orchard bundle; near-cli for the rest, printed from the calls a wallet would sign (core/refund-calls.ts). Empty
+ * when nothing is to be done, when the refund address cannot be told from the transaction (we never suggest any
+ * address but the deposit's own or its single sender), or when the refund would return nothing.
+ */
 export function refundSteps(f: BtcDepositFacts, v: BtcDepositVerdict, c: RefundConfig): RefundStep[] {
+  return signInStep(stepsLeft(f, v, c));
+}
+
+function stepsLeft(f: BtcDepositFacts, v: BtcDepositVerdict, c: RefundConfig): RefundStep[] {
   const { name } = UTXO_CHAINS[f.chain];
   const sign: RefundStep = {
     title: `Have the bridge sign the ${name} refund`,
-    command: `bridge-cli mainnet near-sign-btc-transaction --chain ${f.chain} --btc-pending-id <btc_pending_id from the execute_refund logs>`,
-    note: `The bridge's relayer then broadcasts it to ${name}.`,
+    command: nearCliCommand(signRefundCall(f.chain, PENDING_ID_PLACEHOLDER)),
+    note:
+      `Anyone can ask for a refund's signature: NEAR's MPC network signs it and the bridge's relayer then broadcasts it to ${name}. The btc_pending_id is in the execute_refund transaction's logs (its generate_btc_pending_info event, on nearblocks.io).` +
+      ` The signing account needs a little over ${aboutNear(upfrontYocto(REFUND_CALL_GAS, 1n))} NEAR, held for ${tgasOf(REFUND_CALL_GAS)} of gas (the unused gas comes back when the call finishes); the 1 yoctoNEAR it attaches goes to NEAR's MPC signer.` +
+      ` Or with bridge-cli: bridge-cli mainnet near-sign-btc-transaction --chain ${f.chain} --btc-pending-id ${PENDING_ID_PLACEHOLDER}`,
   };
 
   if (v.state === "ready") {
@@ -330,8 +405,11 @@ export function refundSteps(f: BtcDepositFacts, v: BtcDepositVerdict, c: RefundC
   }
   if (v.state === "executed") return [sign];
   if (v.state !== "refundable" || v.tooSmall) return [];
-  const request = `Request the refund (${near(c.requestDepositYocto)} NEAR, not returned)`;
+  const fee = c.requestDepositYocto;
+  const request = `Request the refund (${formatNear(fee)} NEAR, not returned)`;
   const requestCmd = `bridge-cli mainnet btc-request-refund --chain ${f.chain} --btc-tx-hash ${f.txid} --vout ${f.vout}`;
+  // The proof is checked in a callback, against the light client, after the deposit is taken.
+  const requestCosts = `${needs(fee, BRIDGE_CLI_GAS, "bridge-cli's ")} The contract takes the ${formatNear(fee)} NEAR before it checks the deposit against its light client, so a request that fails there still costs it.`;
   const wait: RefundStep = { title: `Wait ${days(v.lockSec)} for the timelock` };
 
   if (v.refundTo === null && v.batchSender) {
@@ -340,9 +418,9 @@ export function refundSteps(f: BtcDepositFacts, v: BtcDepositVerdict, c: RefundC
     const execute = executeStep(f, null, c);
     return [
       {
-        title: `Request the refund to your own address (${near(c.requestDepositYocto)} NEAR, not returned)`,
+        title: `Request the refund to your own address (${formatNear(fee)} NEAR, not returned)`,
         command: `${requestCmd} --refund-address ${own}`,
-        note: `This deposit came in a batch payout of ${f.outputs ?? "many"} outputs, so its sender is the wallet of the exchange or service that paid it out, not yours, and the deposit names no refund address. Name an address you control. The contract, and this tool, cannot check that the address is yours: the ${days(v.lockSec)} lock gives the bridge's DAO or operator time to reject a false claim.${requestBy(v)}`,
+        note: `This deposit came in a batch payout of ${f.outputs ?? "many"} outputs, so its sender is the wallet of the exchange or service that paid it out, not yours, and the deposit names no refund address. Name an address you control. The contract, and this tool, cannot check that the address is yours: the ${days(v.lockSec)} lock gives the bridge's DAO or operator time to reject a false claim.${requestBy(v)}${requestCosts}`,
       },
       wait,
       ...(execute ? [execute] : []),
@@ -357,10 +435,12 @@ export function refundSteps(f: BtcDepositFacts, v: BtcDepositVerdict, c: RefundC
     const execute = executeStep(f, null, c);
     return [
       {
-        title: `Request the refund to your own address (${near(c.requestDepositYocto)} NEAR, not returned)`,
+        title: `Request the refund to your own address (${formatNear(fee)} NEAR, not returned)`,
         command: `${requestCmd} --refund-address ${OWN_UNIFIED_ADDRESS}`,
         note:
-          "This deposit came from a shielded pool, so it has no transparent sender and names no refund address. Name an address you control, ideally your own unified address with an Orchard receiver so the refund stays shielded (a Sapling-only zs1 address cannot be refunded by this contract). The contract, and this tool, cannot check that the address is yours: the longer lock gives the bridge's DAO or operator time to reject a false claim.",
+          "This deposit came from a shielded pool, so it has no transparent sender and names no refund address. Name an address you control, ideally your own unified address with an Orchard receiver so the refund stays shielded (a Sapling-only zs1 address cannot be refunded by this contract). The contract, and this tool, cannot check that the address is yours: the longer lock gives the bridge's DAO or operator time to reject a false claim." +
+          requestBy(v) +
+          requestCosts,
       },
       wait,
       ...(execute ? [execute] : []),
@@ -378,7 +458,9 @@ export function refundSteps(f: BtcDepositFacts, v: BtcDepositVerdict, c: RefundC
       note:
         (v.refundToFromDeposit
           ? "The deposit itself names the refund address, so the refund can only go there."
-          : "The deposit names no refund address: the request names your sending wallet, and the bridge may reject a request it finds suspicious during the lock.") + requestBy(v),
+          : "The deposit names no refund address: the request names your sending wallet, and the bridge may reject a request it finds suspicious during the lock.") +
+        requestBy(v) +
+        requestCosts,
     },
     wait,
     execute,

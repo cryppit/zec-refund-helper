@@ -1,10 +1,11 @@
 # Architecture
 
-Eight modules and no runtime dependencies.
+Ten modules and no runtime dependencies.
 
 | File | Role |
 |---|---|
-| `src/core/btc-refund.ts` | Pure logic: the connector accounts, `btcDepositVerdict`, `refundSteps`, `refundBoard`, `receiverOf`; the Zcash refund fee (`zip317Fee`, `ZCASH_REFUND_FEE_ZAT`, `refundFeeFor`) and `refundPath` (which `execute_refund` an address can take: `shielded`, `transparent` or `none`). No I/O, no clock (the current time is passed in). |
+| `src/core/btc-refund.ts` | Pure logic: the connector accounts, `btcDepositVerdict`, `refundSteps`, `refundBoard`, `receiverOf` (with `isNearAccountId`, the protocol's account-id rule); `REQUEST_WINDOW` (how many blocks each light client keeps: the request deadline); the Zcash refund fee (`zip317Fee`, `ZCASH_REFUND_FEE_ZAT`, `refundFeeFor`). No I/O, no clock (the current time is passed in). |
+| `src/core/refund-calls.ts` | Pure: the exact NEAR calls that finish a refund, `{receiverId, methodName, args, gas, deposit}`: `refundCalls` (what a wallet can sign now: `execute_refund`, then `sign_btc_transaction`), `nearCliCommand` (the printed near-cli steps come from these same calls), `walletTransaction` (NEAR Connect's `signAndSendTransaction` shape), `pendingIdOf`, `upfrontYocto`; and `refundPath` (which `execute_refund` an address can take: `shielded`, `transparent` or `none`). |
 | `src/core/zcash-address.ts` | Pure Zcash address parsing with no dependencies: Base58Check (own SHA-256), Bech32/Bech32m, ZIP-316 unified addresses (F4Jumble with own BLAKE2b, typecode items), and `classifyZcashAddress`: kind, receivers, and which refund the connector can build to it. |
 | `src/core/rpc.ts` | NEAR JSON-RPC with retries and provider fallback (FastNEAR, free.rpc.fastnear.com, near.drpc.org, rpc.mainnet.near.org): a busy provider (429, 5xx, network error, a provider-side timeout or `UNAVAILABLE_SHARD`) is retried with backoff, then the next is tried; a chain answer, errors included, is returned as is. Clock, sleep, randomness and fetch are injected. |
 | `src/btc-refund.ts` | I/O. `publicBtcRefundClient(fetch, rpc, chain)` (`rpc`: a caller from `liveNearRpc`, or one provider URL) reads Blockchair (Zcash: the transaction dashboard, and for the deposit the node's decoded transaction for the shielded pools that funded it) or mempool.space (Bitcoin), the Omni bridge indexer and the connector's view methods over NEAR RPC. `checkBtcDeposit` collects the facts and asks the core for a verdict; `checkRefundBoard` builds the board. |
@@ -29,6 +30,7 @@ flowchart TD
   H --> V1[credited / crediting / refunded]
   H --> V5[absorbed: below the minimum,<br/>in unavailable_utxos, no refund path]
   H --> V2[refundable: stuck]
+  H --> V6[too_old: the light client no longer<br/>has the block: no commands]
   H --> V3[requested: in timelock]
   H --> V4[ready / executed]
   V2 --> R{refund address}
@@ -41,8 +43,8 @@ flowchart TD
   S2 --> P{refundPath of the address}
   V4 --> P
   P -- Orchard receiver --> S3a[3. bridge-cli btc-execute-refund --chain zcash<br/>builds the Orchard bundle: shielded]
-  P -- t-address --> S3b[3. bridge-cli btc-execute-refund --chain zcash --transparent]
-  S3a --> S4[4. near-sign-btc-transaction:<br/>MPC signs, relayer broadcasts ZEC<br/>to the refund address only]
+  P -- t-address --> S3b[3. near-cli execute_refund<br/>no bundle: transparent]
+  S3a --> S4[4. sign_btc_transaction with near-cli:<br/>MPC signs, relayer broadcasts ZEC<br/>to the refund address only]
   S3b --> S4
 ```
 
@@ -72,6 +74,13 @@ Read from Near-One/btc-bridge `btc-bridge-v0.9.7-rc3` (`d2140ec`), whose release
   v6 transaction's Ironwood slot.
 - The address parser has no Sapling or Sprout conversion, so those addresses can never be paid; `request_refund` does
   not check the address.
+- The deposits are checked with `>=` and kept: 2 NEAR for `request_refund`, 1 NEAR for `execute_refund` ("NOT
+  refunded"), anything attached beyond them too. `request_refund` checks the light-client proof in a callback, after
+  taking the 2 NEAR; on Zcash `execute_refund` also checks the lock and the request in a callback (it needs the light
+  client's height first), after taking the 1 NEAR.
+- An account can hold one executed refund awaiting its signature (`pending_tx_limits`, default 1): it must get that one
+  signed before it executes another ("Too many pending sign transactions"). `sign_btc_transaction` is open to anyone
+  for a refund and passes its 1 yoctoNEAR to the MPC signer.
 
 ## Testing
 

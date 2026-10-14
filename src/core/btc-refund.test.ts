@@ -3,13 +3,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BTC_REQUEST_WINDOW_SEC,
   btcDepositVerdict,
   isCredited,
+  isNearAccountId,
   receiverOf,
   refundBoard,
   refundFeeFor,
   refundPath,
   refundSteps,
+  REQUEST_WINDOW,
+  requestWindowSec,
   zip317Fee,
   ZCASH_REFUND_FEE_ZAT,
   type BtcDepositFacts,
@@ -17,6 +21,7 @@ import {
   type RefundConfig,
   type RefundRequestRow,
 } from "./btc-refund.js";
+import { nearCliCommand, PENDING_ID_PLACEHOLDER, refundCalls, signRefundCall } from "./refund-calls.js";
 
 const NEAR = 10n ** 24n;
 /** The live mainnet config read on 2026-10-13. */
@@ -55,15 +60,6 @@ const facts = (over: Partial<BtcDepositFacts> = {}): BtcDepositFacts => ({
 const withRefundAddress = { recipient_id: "intents.near", safe_deposit: { msg: `{"receiver_id":"${ORDER}"}` }, refund_address: SENDER };
 const HOUR = 3_600;
 const DAY = 86_400;
-
-describe("a deposit below the minimum that the bridge verified (unavailable_utxos)", () => {
-  it("is absorbed, not credited: nothing was minted and the contract has no refund path for it", () => {
-    const f = facts({ chain: "zcash", amountSat: 40_000, absorbed: true });
-    expect(isCredited(f)).toBe(false);
-    expect(btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY)).toEqual({ state: "absorbed", minDepositSat: 100_000 });
-    expect(refundSteps(f, { state: "absorbed", minDepositSat: 100_000 }, ZCONFIG)).toEqual([]);
-  });
-});
 
 describe("receiverOf", () => {
   it("is the order account inside a 1Click deposit message, or the plain NEAR recipient", () => {
@@ -152,26 +148,71 @@ describe("isCredited", () => {
 });
 
 describe("refundSteps", () => {
-  it("for a stuck deposit: request with bridge-cli (2 NEAR), wait the lock, execute (1 NEAR), sign", () => {
+  it("for a stuck deposit: let near-cli sign, request with bridge-cli (2 NEAR), wait the lock, execute (1 NEAR) and sign with near-cli", () => {
     const f = facts({ msg: withRefundAddress });
     const steps = refundSteps(f, btcDepositVerdict(f, CONFIG, CONFIRMED + DAY), CONFIG);
     expect(steps.map((s) => s.title)).toEqual([
+      "Let near-cli sign as your NEAR account (once)",
       "Request the refund (2 NEAR, not returned)",
       "Wait 2 days for the timelock",
-      "Execute the refund (1 NEAR)",
+      "Execute the refund (1 NEAR, not returned)",
       "Have the bridge sign the Bitcoin refund",
     ]);
-    expect(steps[0]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain btc --btc-tx-hash ${TXID} --vout 0`);
-    expect(steps[2]?.command).toContain(`json-args '{"utxo_storage_key":"${TXID}@0"}'`);
-    expect(steps[2]?.command).toContain("attached-deposit '1 NEAR'");
-    expect(steps[3]?.command).toBe("bridge-cli mainnet near-sign-btc-transaction --chain btc --btc-pending-id <btc_pending_id from the execute_refund logs>");
+    expect(steps[0]?.command).toBe("near account import-account using-web-wallet network-config mainnet");
+    expect(steps[1]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain btc --btc-tx-hash ${TXID} --vout 0`);
+    expect(steps[3]?.command).toBe(
+      `near contract call-function as-transaction btc-connector.bridge.near execute_refund json-args '{"utxo_storage_key":"${TXID}@0","chain_specific_data":null}' prepaid-gas '250.0 Tgas' attached-deposit '1 NEAR' sign-as <your-account.near> network-config mainnet sign-with-keychain send`,
+    );
+    expect(steps[4]?.command).toBe(
+      `near contract call-function as-transaction btc-connector.bridge.near sign_btc_transaction json-args '{"btc_pending_sign_id":"<btc_pending_id from the execute_refund logs>","sign_index":0,"key_version":0}' prepaid-gas '250.0 Tgas' attached-deposit '1 yoctoNEAR' sign-as <your-account.near> network-config mainnet sign-with-keychain send`,
+    );
+    expect(steps[4]?.note).toContain("Or with bridge-cli: bridge-cli mainnet near-sign-btc-transaction --chain btc --btc-pending-id <btc_pending_id from the execute_refund logs>");
+  });
+
+  it("prints the near-cli commands from the same calls a wallet would sign, so the two cannot drift", () => {
+    const request = { refundAddress: SENDER, amountSat: 9_997_900, createdAtSec: CONFIRMED, executed: false, msgHasRefundAddress: true, gasFeeSat: 5_000 };
+    const f = facts({ msg: withRefundAddress, request });
+    const v = btcDepositVerdict(f, CONFIG, CONFIRMED + 3 * DAY);
+    const [execute] = refundCalls(f, v, CONFIG);
+    expect(execute).toBeDefined();
+    const steps = refundSteps(f, v, CONFIG);
+    expect(steps[1]?.command).toBe(nearCliCommand(execute!));
+    expect(steps[2]?.command).toBe(nearCliCommand(signRefundCall("btc", PENDING_ID_PLACEHOLDER)));
+  });
+
+  it("each call says what the signing account needs (deposit plus gas bought upfront) and which deposits are not returned", () => {
+    const f = facts({ msg: withRefundAddress });
+    const steps = refundSteps(f, btcDepositVerdict(f, CONFIG, CONFIRMED + DAY), CONFIG);
+    const [setup, request, , execute, sign] = steps;
+    expect(request?.note).toContain("The signing account needs a little over 2.3 NEAR: the 2 NEAR and 0.3 NEAR held for bridge-cli's 300 Tgas of gas (the unused gas comes back when the call finishes).");
+    expect(request?.note).toContain("The contract takes the 2 NEAR before it checks the deposit against its light client, so a request that fails there still costs it.");
+    expect(execute?.note).toContain("Attach exactly 1 NEAR, as this command does: the contract keeps all it is given, so anything more is lost.");
+    expect(execute?.note).toContain("The signing account needs a little over 1.25 NEAR: the 1 NEAR and 0.25 NEAR held for 250 Tgas of gas (the unused gas comes back when the call finishes).");
+    expect(sign?.note).toContain("The signing account needs a little over 0.25 NEAR, held for 250 Tgas of gas (the unused gas comes back when the call finishes); the 1 yoctoNEAR it attaches goes to NEAR's MPC signer.");
+    expect(setup?.note).toContain("using-seed-phrase or using-private-key");
+    expect(setup?.note).toContain("bridge-cli reads the account and its private key from NEAR_SIGNER and NEAR_PRIVATE_KEY.");
+  });
+
+  it("an account can have one executed refund waiting for its signature (the contract's pending_tx_limits default)", () => {
+    const f = facts({ msg: withRefundAddress });
+    const execute = refundSteps(f, btcDepositVerdict(f, CONFIG, CONFIRMED + DAY), CONFIG).find((s) => s.title.startsWith("Execute"));
+    expect(execute?.note).toContain("An account can have only one executed refund waiting for its signature: sign this one (next step) before executing another.");
+  });
+
+  it("an executed refund: only the near-cli sign-in and the sign step, with no bridge-cli setup", () => {
+    const request = { refundAddress: SENDER, amountSat: 9_997_900, createdAtSec: CONFIRMED, executed: true, msgHasRefundAddress: true, gasFeeSat: 5_000 };
+    const f = facts({ msg: withRefundAddress, request });
+    const steps = refundSteps(f, btcDepositVerdict(f, CONFIG, CONFIRMED + 3 * DAY), CONFIG);
+    expect(steps.map((s) => s.title)).toEqual(["Let near-cli sign as your NEAR account (once)", "Have the bridge sign the Bitcoin refund"]);
+    expect(steps[0]?.note).not.toContain("NEAR_SIGNER");
+    expect(steps[1]?.note).toContain("generate_btc_pending_info");
   });
 
   it("names the sending wallet as the refund address only when the deposit has none", () => {
     const f = facts();
     const steps = refundSteps(f, btcDepositVerdict(f, CONFIG, CONFIRMED + DAY), CONFIG);
-    expect(steps[0]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain btc --btc-tx-hash ${TXID} --vout 0 --refund-address ${SENDER}`);
-    expect(steps[1]?.title).toBe("Wait 14 days for the timelock");
+    expect(steps[1]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain btc --btc-tx-hash ${TXID} --vout 0 --refund-address ${SENDER}`);
+    expect(steps[2]?.title).toBe("Wait 14 days for the timelock");
   });
 
   it("gives no commands when the refund address cannot be told from the transaction, or the refund would return nothing", () => {
@@ -185,15 +226,19 @@ describe("refundSteps", () => {
     const request = { refundAddress: SENDER, amountSat: 9_997_900, createdAtSec: 1_787_161_227, executed: false, msgHasRefundAddress: false, gasFeeSat: 5_000 };
     const f = facts({ request });
     const steps = refundSteps(f, btcDepositVerdict(f, CONFIG, 1_790_000_000), CONFIG);
-    expect(steps.map((s) => s.title)).toEqual(["Execute the refund (1 NEAR)", "Have the bridge sign the Bitcoin refund"]);
+    expect(steps.map((s) => s.title)).toEqual(["Let near-cli sign as your NEAR account (once)", "Execute the refund (1 NEAR, not returned)", "Have the bridge sign the Bitcoin refund"]);
+    expect(steps[0]?.note).not.toContain("NEAR_SIGNER");
   });
 
-  it("a Zcash deposit gets the Zcash connector and bridge-cli's --chain zcash", () => {
+  it("a Zcash deposit gets the Zcash connector: bridge-cli's --chain zcash for the request, near-cli for a transparent execute and the sign", () => {
     const f = facts({ chain: "zcash", msg: { ...withRefundAddress, refund_address: T_ADDR }, senders: [T_ADDR] });
     const steps = refundSteps(f, btcDepositVerdict(f, CONFIG, CONFIRMED + DAY), CONFIG);
-    expect(steps[0]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain zcash --btc-tx-hash ${TXID} --vout 0`);
-    expect(steps[2]?.command).toBe(`bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${TXID} --vout 0 --transparent`);
-    expect(steps[3]).toMatchObject({ title: "Have the bridge sign the Zcash refund", command: "bridge-cli mainnet near-sign-btc-transaction --chain zcash --btc-pending-id <btc_pending_id from the execute_refund logs>" });
+    expect(steps[1]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain zcash --btc-tx-hash ${TXID} --vout 0`);
+    expect(steps[3]?.command).toBe(
+      `near contract call-function as-transaction zcash-connector.bridge.near execute_refund json-args '{"utxo_storage_key":"${TXID}@0","chain_specific_data":null}' prepaid-gas '250.0 Tgas' attached-deposit '1 NEAR' sign-as <your-account.near> network-config mainnet sign-with-keychain send`,
+    );
+    expect(steps[4]).toMatchObject({ title: "Have the bridge sign the Zcash refund", command: nearCliCommand(signRefundCall("zcash", PENDING_ID_PLACEHOLDER)) });
+    expect(steps[4]?.note).toContain("bridge-cli mainnet near-sign-btc-transaction --chain zcash --btc-pending-id <btc_pending_id from the execute_refund logs>");
   });
 
   it("nothing to do for a credited deposit or one already refunded", () => {
@@ -260,7 +305,7 @@ describe("the Zcash refund fee", () => {
   it("a Zcash deposit between the fee and 0.01 ZEC is refundable (it used to be called too small)", () => {
     const v = btcDepositVerdict(zfacts({ amountSat: 50_000 }), ZCONFIG, CONFIRMED + DAY);
     expect(v).toMatchObject({ state: "refundable", belowMinimum: true, tooSmall: false, feeSat: 10_000 });
-    expect(refundSteps(zfacts({ amountSat: 50_000 }), v, ZCONFIG).map((s) => s.title)[0]).toBe("Request the refund (2 NEAR, not returned)");
+    expect(refundSteps(zfacts({ amountSat: 50_000 }), v, ZCONFIG).map((s) => s.title)[1]).toBe("Request the refund (2 NEAR, not returned)");
   });
 
   it("the contract needs the fee to be less than the deposit: 10,000 zatoshis or less cannot be refunded", () => {
@@ -289,27 +334,47 @@ describe("refundSteps for Zcash refunds", () => {
     const f = zfacts({ msg: { ...withRefundAddress, refund_address: UA_ORCHARD_ONLY } });
     const steps = refundSteps(f, btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY), ZCONFIG);
     expect(steps.map((s) => s.title)).toEqual([
+      "Let near-cli sign as your NEAR account (once)",
       "Request the refund (2 NEAR, not returned)",
       "Wait 2 days for the timelock",
-      "Execute the refund, shielded (1 NEAR)",
+      "Execute the refund, shielded (1 NEAR, not returned)",
       "Have the bridge sign the Zcash refund",
     ]);
-    expect(steps[2]?.command).toBe(`bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${ZTX} --vout 0`);
-    expect(steps[2]?.note).toContain("Orchard bundle");
-    expect(steps[2]?.note).not.toContain("--transparent");
+    expect(steps[3]?.command).toBe(`bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${ZTX} --vout 0`);
+    expect(steps[3]?.note).toContain("Orchard bundle");
+    expect(steps[3]?.note).not.toContain("--transparent");
+    // bridge-cli attaches the live deposit itself, with its own 300 Tgas.
+    expect(steps[3]?.note).toContain("The signing account needs a little over 1.3 NEAR: the 1 NEAR and 0.3 NEAR held for bridge-cli's 300 Tgas of gas");
+    expect(steps[3]?.note).not.toContain("Attach exactly");
+  });
+
+  it("a Zcash execute takes the 1 NEAR before the contract checks the lock and the request, so a failed one still costs it", () => {
+    for (const address of [UA_ORCHARD_ONLY, T_ADDR]) {
+      const f = zfacts({ msg: { ...withRefundAddress, refund_address: address } });
+      const execute = refundSteps(f, btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY), ZCONFIG).find((s) => s.title.startsWith("Execute"));
+      expect(execute?.note, address).toContain("On Zcash the contract takes the 1 NEAR before it checks the lock and the request, so a call that fails there still costs it: send it once, after the lock has passed.");
+    }
+    const btc = facts({ msg: withRefundAddress });
+    expect(refundSteps(btc, btcDepositVerdict(btc, CONFIG, CONFIRMED + DAY), CONFIG).find((s) => s.title.startsWith("Execute"))?.note).not.toContain("On Zcash");
   });
 
   it("a unified address with both an Orchard and a transparent receiver: shielded by default, --transparent offered", () => {
     const f = zfacts({ msg: { ...withRefundAddress, refund_address: UA_T_AND_ORCHARD } });
     const steps = refundSteps(f, btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY), ZCONFIG);
-    expect(steps[2]?.command).not.toContain("--transparent");
-    expect(steps[2]?.note).toContain("--transparent");
+    expect(steps[3]?.command).not.toContain("--transparent");
+    expect(steps[3]?.note).toContain("--transparent");
   });
 
-  it("a t-address: the transparent refund (--transparent; the shielded default would fail with no Orchard receiver)", () => {
+  it("a t-address: the transparent refund with near-cli (no Orchard bundle to build), attaching exactly the live deposit", () => {
     const f = zfacts({ msg: { ...withRefundAddress, refund_address: T_ADDR } });
     const steps = refundSteps(f, btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY), ZCONFIG);
-    expect(steps[2]).toMatchObject({ title: "Execute the refund, transparent (1 NEAR)", command: `bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${ZTX} --vout 0 --transparent` });
+    expect(steps[3]).toMatchObject({
+      title: "Execute the refund, transparent (1 NEAR, not returned)",
+      command: nearCliCommand(refundCalls(f, { state: "ready", refundTo: T_ADDR }, ZCONFIG)[0]!),
+    });
+    expect(steps[3]?.command).toContain(`execute_refund json-args '{"utxo_storage_key":"${ZTX}@0","chain_specific_data":null}'`);
+    expect(steps[3]?.note).toContain("Attach exactly 1 NEAR");
+    expect(steps[0]?.note).toContain("NEAR_SIGNER"); // the request is still bridge-cli's
   });
 
   it("a ready request to a unified address: execute shielded, with the fee stored on the request", () => {
@@ -318,7 +383,8 @@ describe("refundSteps for Zcash refunds", () => {
     const v = btcDepositVerdict(f, ZCONFIG, CONFIRMED + 3 * DAY);
     expect(v.state).toBe("ready");
     const steps = refundSteps(f, v, ZCONFIG);
-    expect(steps[0]?.command).toBe(`bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${ZTX} --vout 0`);
+    expect(steps[1]?.command).toBe(`bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${ZTX} --vout 0`);
+    expect(steps[0]?.note).toContain("NEAR_SIGNER");
   });
 
   it("a deposit whose refund address is Sapling-only (synthetic): no commands, the connector cannot pay it", () => {
@@ -343,13 +409,16 @@ describe("a Zcash deposit funded from a shielded pool", () => {
     expect(v).toMatchObject({ state: "refundable", refundTo: null, refundToFromDeposit: false, noTransparentSender: true, lockSec: 1_209_600 });
     const steps = refundSteps(f, v, ZCONFIG);
     expect(steps.map((s) => s.title)).toEqual([
+      "Let near-cli sign as your NEAR account (once)",
       "Request the refund to your own address (2 NEAR, not returned)",
       "Wait 14 days for the timelock",
-      "Execute the refund, shielded (1 NEAR)",
+      "Execute the refund, shielded (1 NEAR, not returned)",
       "Have the bridge sign the Zcash refund",
     ]);
-    expect(steps[0]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain zcash --btc-tx-hash ${ZTX} --vout 0 --refund-address <your own unified address (u1…) with an Orchard receiver>`);
-    expect(steps[0]?.note).toContain("cannot check that the address is yours");
+    expect(steps[1]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain zcash --btc-tx-hash ${ZTX} --vout 0 --refund-address <your own unified address (u1…) with an Orchard receiver>`);
+    expect(steps[1]?.note).toContain("cannot check that the address is yours");
+    expect(steps[1]?.note).toContain("The signing account needs a little over 2.3 NEAR");
+    expect(steps[1]?.note).toContain("Request it before about 2026-11-17");
   });
 
   it("several transparent senders still get no suggestion and no commands", () => {
@@ -357,6 +426,15 @@ describe("a Zcash deposit funded from a shielded pool", () => {
     const v = btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY);
     expect(v).toMatchObject({ refundTo: null, noTransparentSender: false });
     expect(refundSteps(f, v, ZCONFIG)).toEqual([]);
+  });
+});
+
+describe("a deposit below the minimum that the bridge verified (unavailable_utxos)", () => {
+  it("is absorbed, not credited: nothing was minted and the contract has no refund path for it", () => {
+    const f = facts({ chain: "zcash", amountSat: 40_000, absorbed: true });
+    expect(isCredited(f)).toBe(false);
+    expect(btcDepositVerdict(f, ZCONFIG, CONFIRMED + 86_400)).toEqual({ state: "absorbed", minDepositSat: 100_000 });
+    expect(refundSteps(f, { state: "absorbed", minDepositSat: 100_000 }, ZCONFIG)).toEqual([]);
   });
 });
 
@@ -369,8 +447,9 @@ describe("refund safety", () => {
     const v = btcDepositVerdict(f, CONFIG, CONFIRMED + DAY_S);
     expect(v).toMatchObject({ state: "refundable", refundTo: null, batchSender: true });
     const steps = refundSteps(f, v, CONFIG);
-    expect(steps[0]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain btc --btc-tx-hash ${TXID} --vout 0 --refund-address <your own Bitcoin address>`);
-    expect(steps[0]?.note).toContain("came in a batch payout of 22 outputs");
+    expect(steps[1]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain btc --btc-tx-hash ${TXID} --vout 0 --refund-address <your own Bitcoin address>`);
+    expect(steps[1]?.note).toContain("came in a batch payout of 22 outputs");
+    expect(steps[1]?.note).toContain("The signing account needs a little over 2.3 NEAR");
   });
 
   it("a single sender that paid one or two outputs (payment and change) is still the refund address", () => {
@@ -388,8 +467,31 @@ describe("refund safety", () => {
   it("a Bitcoin refund must be requested while the bridge's light client still has the deposit's block (52,704 blocks, about 366 days)", () => {
     const v = btcDepositVerdict(facts(), CONFIG, CONFIRMED + DAY_S);
     expect(v).toMatchObject({ state: "refundable", requestBySec: CONFIRMED + 52_704 * 600 });
-    expect(refundSteps(facts(), v, CONFIG)[0]?.note).toContain("Request it before about 2027-08-20");
+    expect(refundSteps(facts(), v, CONFIG)[1]?.note).toContain("Request it before about 2027-08-20");
     expect(btcDepositVerdict(facts(), CONFIG, CONFIRMED + 52_704 * 600 + 1)).toEqual({ state: "too_old", requestBySec: CONFIRMED + 52_704 * 600 });
+  });
+
+  it("a Zcash refund must be requested while zcash-client.bridge.near still has the deposit's block (103,680 blocks: 90 days at 75 seconds)", () => {
+    expect(REQUEST_WINDOW.zcash).toMatchObject({ blocks: 103_680, blockSec: 75 });
+    expect(requestWindowSec("zcash")).toBe(90 * DAY_S);
+    const f = zfacts({ msg: { ...withRefundAddress, refund_address: T_ADDR } });
+    const v = btcDepositVerdict(f, ZCONFIG, CONFIRMED + 60 * DAY_S);
+    expect(v).toMatchObject({ state: "refundable", requestBySec: CONFIRMED + 90 * DAY_S });
+    expect(refundSteps(f, v, ZCONFIG).find((s) => s.title.startsWith("Request"))?.note).toContain("Request it before about 2026-11-17");
+    expect(btcDepositVerdict(f, ZCONFIG, CONFIRMED + 91 * DAY_S)).toEqual({ state: "too_old", requestBySec: CONFIRMED + 90 * DAY_S });
+    expect(refundSteps(f, { state: "too_old", requestBySec: CONFIRMED + 90 * DAY_S }, ZCONFIG)).toEqual([]);
+  });
+
+  it("the Bitcoin window is unchanged: 52,704 blocks at 10 minutes, about 366 days", () => {
+    expect(REQUEST_WINDOW.btc).toMatchObject({ blocks: 52_704, blockSec: 600 });
+    expect(requestWindowSec("btc")).toBe(52_704 * 600);
+    expect(BTC_REQUEST_WINDOW_SEC).toBe(52_704 * 600);
+  });
+
+  it("a request made in time is not too old later: the light client is needed only for the request", () => {
+    const request = { refundAddress: T_ADDR, amountSat: 5_000_000_000, createdAtSec: CONFIRMED + 80 * DAY_S, executed: false, msgHasRefundAddress: true, gasFeeSat: 10_000 };
+    const f = zfacts({ msg: { ...withRefundAddress, refund_address: T_ADDR }, request });
+    expect(btcDepositVerdict(f, ZCONFIG, CONFIRMED + 120 * DAY_S)).toMatchObject({ state: "ready", refundTo: T_ADDR });
   });
 
   it("a deposit spent alone to one address after its request was deleted is refunded there, not credited", () => {
@@ -401,7 +503,27 @@ describe("refund safety", () => {
 });
 
 describe("receiverOf", () => {
+  const safe = (msg: string) => ({ recipient_id: "intents.near", safe_deposit: { msg } });
+
   it("takes a bare account as the safe deposit message (intents.near's DepositMessage::from_str accepts one)", () => {
-    expect(receiverOf({ recipient_id: "intents.near", safe_deposit: { msg: "alice.near" } })).toBe("alice.near");
+    expect(receiverOf(safe("alice.near"))).toBe("alice.near");
+    expect(receiverOf(safe("a1-b_c.sub.near"))).toBe("a1-b_c.sub.near");
+    expect(receiverOf(safe(`0x${"ab".repeat(20)}`))).toBe(`0x${"ab".repeat(20)}`);
+  });
+
+  it("never names an account id the protocol rejects: separators at either end or doubled, wrong case or length (docs.near.org account-validation)", () => {
+    for (const bad of ["-a", "a-", ".near", "near.", "a..b", "a-_b", "a.-b", "Alice.near", "a", "a".repeat(65), "alice near", "alice@near", ""]) {
+      expect(receiverOf(safe(bad)), bad).toBe("intents.near");
+      expect(receiverOf(safe(JSON.stringify({ receiver_id: bad }))), `json ${bad}`).toBe("intents.near");
+    }
+    expect(isNearAccountId("a".repeat(64))).toBe(true);
+    expect(isNearAccountId("ab")).toBe(true);
+  });
+
+  it("reads the JSON form only when the message starts with {, as intents.near does", () => {
+    expect(receiverOf(safe(`{"receiver_id":"${ORDER}"}`))).toBe(ORDER);
+    // Not an object: intents.near would take the whole string as the account id, which is not one.
+    expect(receiverOf(safe('"alice.near"'))).toBe("intents.near");
+    expect(receiverOf(safe("{not json"))).toBe("intents.near");
   });
 });
