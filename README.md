@@ -144,6 +144,7 @@ Bitcoin's keeps 52,704 blocks, about a year. The tool prints the date to request
 Node 22.15 or newer, pnpm 11.
 
 ```bash
+git clone https://github.com/cryppit/zec-refund-helper && cd zec-refund-helper
 pnpm install
 pnpm zec-refund <your Zcash transaction hash>            # the verdict and the steps left
 pnpm zec-refund <hash> --vout 1                          # pick the output if the transaction has several
