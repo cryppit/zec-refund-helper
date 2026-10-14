@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { cursorAt } from "./core/scan.js";
 import { renderScanText } from "./render-scan.js";
-import { accountExists, indexerLookup, indexerStatus, mergeSegments, pacedFetch, scanCandidates, walkSegment, type WalkResult } from "./scan.js";
+import { accountExists, checkClients, CursorNotHonoured, indexerLookup, indexerStatus, mergeSegments, pacedFetch, scanCandidates, walkIndexer, walkSegment, type WalkResult } from "./scan.js";
 
 const fx = (name: string): string => readFileSync(new URL(`./fixtures/btc-refund/${name}`, import.meta.url), "utf8");
 const json = (body: string, status = 200): Response => new Response(body, { status, headers: { "content-type": "application/json" } });
@@ -112,6 +112,42 @@ describe("the indexer walk", () => {
   });
 });
 
+describe("the indexer walk when a time cursor is not honoured", () => {
+  // The indexer documents its cursor as opaque; the parallel walk builds cursors from ObjectId times. If the indexer
+  // stops honouring them (here: it answers every cursor with its first page), the walk must notice and fall back to
+  // one walk that follows only next_cursor from the indexer's first page.
+  const page1 = fx("scan-page-1.json");
+  const page1Next = (JSON.parse(page1) as { next_cursor: string }).next_cursor;
+  const page2Next = (JSON.parse(fx("scan-page-2.json")) as { next_cursor: string }).next_cursor;
+  function ignoringFetch(calls: string[]): typeof fetch {
+    return (async (input: string | URL | Request) => {
+      const url = String(input);
+      calls.push(url);
+      if (url === `${API}/transfers?limit=50&cursor=${page1Next}`) return json(fx("scan-page-2.json"));
+      if (url === `${API}/transfers?limit=50&cursor=${page2Next}`) return json(fx("scan-page-3.json"));
+      if (url.startsWith(`${API}/transfers?limit=50`)) return json(page1);
+      return new Response("not recorded", { status: 500 });
+    }) as typeof fetch;
+  }
+
+  it("a segment whose first page ends before the segment starts is not honoured", async () => {
+    await expect(walkSegment(ignoringFetch([]), { fromSec: T1, toSec: T2 })).rejects.toBeInstanceOf(CursorNotHonoured);
+  });
+
+  it("a cursor the indexer refuses (HTTP 400) is not honoured either", async () => {
+    const refusing = (async () => new Response('{"error":"invalid cursor"}', { status: 400 })) as typeof fetch;
+    await expect(walkSegment(refusing, { fromSec: T1, toSec: T2 })).rejects.toBeInstanceOf(CursorNotHonoured);
+  });
+
+  it("walkIndexer then walks the whole range from the indexer's first page, with the same result", async () => {
+    const calls: string[] = [];
+    const w = await walkIndexer(ignoringFetch(calls), { fromSec: T0, toSec: T2, stepSec: T1 - T0, concurrency: 1 });
+    expect(calls).toContain(`${API}/transfers?limit=50`);
+    expect(w.seen).toEqual({ btc: { deposits: 3, finalised: 2, sat: 9_997_900 + 24_068_130 + 175_319 }, zcash: { deposits: 2, finalised: 2, sat: 423_078 + 8_398_842 } });
+    expect(w.open.map((d) => d.txid)).toEqual([STUCK]);
+  });
+});
+
 describe("scanCandidates", () => {
   const walk: WalkResult = {
     fromSec: T0,
@@ -199,5 +235,23 @@ describe("indexerLookup", () => {
 
   it("an ordinary deposit is not a bridge payout", async () => {
     expect(await indexerLookup(recordedFetch(), "btc", STUCK, 0)).toEqual({ status: "Initialised", bridgePayout: false });
+  });
+});
+
+describe("checkClients: the single check is paced like the scan", () => {
+  it("spaces the parallel NEAR RPC views of one check per host, without retrying on top of the RPC fallback", async () => {
+    const slept: number[] = [];
+    const sent: string[] = [];
+    const fake = (async (input: string | URL | Request, init?: RequestInit) => {
+      const { params } = JSON.parse(String(init?.body)) as { params: { method_name: string } };
+      sent.push(`${new URL(String(input)).host} ${params.method_name}`);
+      return json(fx(params.method_name === "get_config" ? "rpc-config.json" : params.method_name === "required_balance_for_request_refund" ? "rpc-req-bal.json" : "rpc-exec-bal.json"));
+    }) as typeof fetch;
+    const [zcash] = checkClients(fake, async (ms) => {
+      slept.push(ms);
+    });
+    await zcash?.config();
+    expect(sent).toHaveLength(3);
+    expect(slept).toEqual([250, 500]);
   });
 });

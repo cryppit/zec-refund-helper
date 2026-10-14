@@ -10,10 +10,10 @@
 // Public data only, no key: Blockchair / mempool.space, the Omni bridge indexer, and the connector contracts over NEAR
 // RPC. Prints the commands still to run; it never signs or sends anything.
 
-import { publicBtcRefundClient, checkBtcDeposit, checkRefundBoard, type BtcRefundClient } from "./btc-refund.js";
+import { checkBtcDeposit, checkRefundBoard, type BtcRefundClient } from "./btc-refund.js";
 import { renderBtcRefundText, renderRefundBoardText } from "./render-btc-refund.js";
 import { renderScanText } from "./render-scan.js";
-import { INDEX_FIRST_RECORD_SEC, pacedFetch, SCAN_INTERVALS_MS, scanCandidates, walkIndexer } from "./scan.js";
+import { checkClients, INDEX_FIRST_RECORD_SEC, pacedFetch, SCAN_INTERVALS_MS, scanCandidates, walkIndexer } from "./scan.js";
 import { appendFileSync } from "node:fs";
 
 const USAGE =
@@ -21,8 +21,8 @@ const USAGE =
 
 const argv = process.argv.slice(2);
 const replacer = (_k: string, v: unknown): unknown => (typeof v === "bigint" ? v.toString() : v);
-/** Zcash first: this is the Zcash refund helper. A hash is looked up on each chain in turn. */
-const clients = (): BtcRefundClient[] => [publicBtcRefundClient(fetch, undefined, "zcash"), publicBtcRefundClient(fetch, undefined, "btc")];
+/** Zcash first: this is the Zcash refund helper. A hash is looked up on each chain in turn, paced per host. */
+const clients = (): BtcRefundClient[] => checkClients(fetch);
 const nowSec = (): number => Math.floor(Date.now() / 1000);
 
 async function main(): Promise<number> {

@@ -11,6 +11,8 @@ import { classifyZcashAddress } from "./zcash-address.js";
  */
 export const cursorAt = (sec: number): string => Math.floor(sec).toString(16).padStart(8, "0") + "0".repeat(16);
 export const cursorTime = (cursor: string): number => parseInt(cursor.slice(0, 8), 16);
+/** What the indexer's cursors look like today: a 12-byte ObjectId in hex. The API documents them only as opaque. */
+export const OBJECT_ID = /^[0-9a-f]{24}$/;
 
 export interface Segment {
   fromSec: number;
@@ -48,6 +50,14 @@ export interface TransfersPage {
   records: number;
   nextCursor: string | null;
   deposits: IndexedDeposit[];
+}
+
+/**
+ * A walk started at `cursorAt(fromSec)` began there: its first page ends (next_cursor, the last record's id) at or after
+ * `fromSec`. An indexer that ignores the cursor answers with its first records, from before the segment.
+ */
+export function cursorHonoured(seg: Segment, page: TransfersPage): boolean {
+  return page.nextCursor === null || (OBJECT_ID.test(page.nextCursor) && cursorTime(page.nextCursor) >= seg.fromSec);
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);

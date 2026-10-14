@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { btcDepositFacts, liveNearRpc, publicBtcRefundClient, type BtcRefundClient, type RpcCall } from "./btc-refund.js";
 import { btcDepositVerdict, UTXO_CHAINS, type BtcDepositFacts, type RefundConfig, type RefundRequestRow, type UtxoChain } from "./core/btc-refund.js";
-import { cursorAt, cursorTime, isCreditedStatus, parseTransfersPage, scanRow, segments, summarize, type ChainSummary, type IndexedDeposit, type ScanRow, type Segment } from "./core/scan.js";
+import { cursorAt, cursorHonoured, cursorTime, isCreditedStatus, OBJECT_ID, parseTransfersPage, scanRow, segments, summarize, type ChainSummary, type IndexedDeposit, type ScanRow, type Segment } from "./core/scan.js";
 
 export const INDEXER_API = "https://mainnet.api.bridge.nearone.org";
 export const NEAR_RPC = "https://rpc.mainnet.fastnear.com";
@@ -133,6 +133,9 @@ export interface WalkResult {
 const zero = (): Record<UtxoChain, ChainCounts> => ({ btc: { deposits: 0, finalised: 0, sat: 0 }, zcash: { deposits: 0, finalised: 0, sat: 0 } });
 const keyOf = (d: { chain: UtxoChain; txid: string; vout: number }): string => `${d.chain}:${d.txid}@${d.vout}`;
 
+/** The indexer did not start a walk where a time-based cursor pointed: its cursors are opaque now. */
+export class CursorNotHonoured extends Error {}
+
 export async function walkSegment(f: typeof fetch, seg: Segment, onPage?: () => void): Promise<SegmentResult> {
   const r: SegmentResult = { segment: seg, pages: 0, records: 0, middle: zero(), open: [], edges: [] };
   let cursor = cursorAt(seg.fromSec);
@@ -146,7 +149,9 @@ export async function walkSegment(f: typeof fetch, seg: Segment, onPage?: () => 
       // an error message, handled below
     }
     const page = parseTransfersPage(body);
+    if (!page && r.pages === 0 && (res.status === 400 || res.status === 422)) throw new CursorNotHonoured(`the indexer refused the cursor for ${seg.fromSec}: ${text.slice(0, 120)}`);
     if (!page) throw new Error(`indexer: ${text.slice(0, 120)}`);
+    if (r.pages === 0 && !cursorHonoured(seg, page)) throw new CursorNotHonoured(`the indexer's first page for ${seg.fromSec} ends at ${page.nextCursor ?? "nothing"}`);
     r.pages += 1;
     r.records += page.records;
     onPage?.();
@@ -162,6 +167,35 @@ export async function walkSegment(f: typeof fetch, seg: Segment, onPage?: () => 
       }
     }
     if (last || page.nextCursor === null) return r;
+    cursor = page.nextCursor;
+  }
+}
+
+/**
+ * The whole range in one walk from the indexer's first page, following only next_cursor (its documented paging):
+ * the fallback when time cursors are not honoured. Pages are kept from the first that ends inside the range to the
+ * first that ends past it; a cursor that is no longer an ObjectId is followed to the end.
+ */
+export async function walkSequential(f: typeof fetch, fromSec: number, toSec: number, onPage?: () => void): Promise<SegmentResult> {
+  const r: SegmentResult = { segment: { fromSec, toSec }, pages: 0, records: 0, middle: zero(), open: [], edges: [] };
+  let cursor: string | null = null;
+  for (;;) {
+    const res = await f(`${INDEXER_API}/api/v4/transfers?limit=50${cursor ? `&cursor=${cursor}` : ""}`);
+    const text = await res.text();
+    let body: unknown = null;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      // an error message, handled below
+    }
+    const page = parseTransfersPage(body);
+    if (!page) throw new Error(`indexer: ${text.slice(0, 120)}`);
+    r.pages += 1;
+    r.records += page.records;
+    onPage?.();
+    const endSec = page.nextCursor !== null && OBJECT_ID.test(page.nextCursor) ? cursorTime(page.nextCursor) : null;
+    if (endSec === null || endSec >= fromSec) r.edges.push(...page.deposits);
+    if (page.nextCursor === null || (endSec !== null && endSec >= toSec)) return r;
     cursor = page.nextCursor;
   }
 }
@@ -220,8 +254,10 @@ export async function walkIndexer(f: typeof fetch, o: WalkOptions): Promise<Walk
   if (dir) mkdirSync(dir, { recursive: true });
   const file = (s: Segment): string => join(dir ?? "", `${s.fromSec}-${s.toSec}.json`);
 
+  let fallBack = false;
   async function worker(): Promise<void> {
     for (;;) {
+      if (fallBack) return;
       const i = next++;
       const seg = segs[i];
       if (!seg) return;
@@ -235,6 +271,7 @@ export async function walkIndexer(f: typeof fetch, o: WalkOptions): Promise<Walk
       }
       if (!r) {
         r = await walkSegment(f, seg, () => {
+          if (fallBack) throw new CursorNotHonoured("stopped: the walk falls back to next_cursor");
           pages += 1;
           if (pages % 200 === 0) o.onProgress?.(`walk: ${pages} pages read, ${done}/${segs.length} segments done`);
         });
@@ -245,7 +282,18 @@ export async function walkIndexer(f: typeof fetch, o: WalkOptions): Promise<Walk
       o.onProgress?.(`walk: segment ${new Date(seg.fromSec * 1000).toISOString().slice(0, 10)} done (${r.pages} pages); ${done}/${segs.length}`);
     }
   }
-  await Promise.all(Array.from({ length: Math.max(1, o.concurrency ?? 6) }, worker));
+  try {
+    await Promise.all(Array.from({ length: Math.max(1, o.concurrency ?? 6) }, worker));
+  } catch (e) {
+    if (!(e instanceof CursorNotHonoured)) throw e;
+    fallBack = true;
+    o.onProgress?.(`walk: ${e.message}; walking the indexer from its first page by next_cursor instead`);
+    const all = await walkSequential(f, o.fromSec, o.toSec, () => {
+      pages += 1;
+      if (pages % 200 === 0) o.onProgress?.(`walk: ${pages} pages read`);
+    });
+    return mergeSegments([all]);
+  }
   return mergeSegments(results);
 }
 
@@ -480,6 +528,15 @@ export async function scanCandidates(f: typeof fetch, o: ScanOptions): Promise<S
 }
 
 /** Request spacing per host for a full run: gentle on the free tiers (Blockchair allows about 30 requests a minute). */
+/**
+ * The clients for one deposit check, Zcash first, paced per host like the scan: a check reads the connector config
+ * with three views at once. One retry here; the NEAR RPC layer retries and falls back on its own.
+ */
+export function checkClients(fetchImpl: typeof fetch = fetch, sleep?: (ms: number) => Promise<void>): BtcRefundClient[] {
+  const f = pacedFetch(fetchImpl, { intervalMs: SCAN_INTERVALS_MS, retries: 1, ...(sleep ? { sleep } : {}) });
+  return [publicBtcRefundClient(f, undefined, "zcash"), publicBtcRefundClient(f, undefined, "btc")];
+}
+
 export const SCAN_INTERVALS_MS: Record<string, number> = {
   "mainnet.api.bridge.nearone.org": 60,
   "mempool.space": 300,
