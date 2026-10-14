@@ -7,4 +7,6 @@ mkdirSync("web-dist");
 await build({ entryPoints: ["web/main.ts"], bundle: true, format: "esm", target: "es2022", minify: true, outfile: "web-dist/main.js", legalComments: "none" });
 cpSync("web/index.html", "web-dist/index.html");
 cpSync("web/style.css", "web-dist/style.css");
+cpSync("web/poster.jpg", "web-dist/poster.jpg");
+// The demo video is not in git: the Pages workflow adds web-dist/demo.mp4 from the v0.1.0 release.
 console.log("built web-dist/");

@@ -29,6 +29,8 @@ jobs:
       - run: pnpm test
       - run: pnpm typecheck
       - run: pnpm build:web
+      - name: The demo video, from the v0.1.0 release (kept out of git)
+        run: curl -fsSL -o web-dist/demo.mp4 https://github.com/cryppit/zec-refund-helper/releases/download/v0.1.0/zcash-refund-helper-demo.mp4
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web-dist
