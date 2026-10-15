@@ -95,10 +95,14 @@ export const publicUtxoRefundClients = (fetchImpl: typeof fetch = fetch, rpc: Rp
 export function publicBtcRefundClient(fetchImpl: typeof fetch = fetch, rpc: RpcCall | string = liveNearRpc(fetchImpl), chain: UtxoChain = "btc"): BtcRefundClient {
   const connector = UTXO_CHAINS[chain].connector;
   const call: RpcCall = typeof rpc === "string" ? liveNearRpc(fetchImpl, undefined, [rpc]) : rpc;
+  /** null when the service says it does not have it; any other failure names the service, so the user sees which one. */
   async function getJson(url: string): Promise<unknown | null> {
-    const res = await fetchImpl(url);
+    const host = new URL(url).host;
+    const res = await fetchImpl(url).catch((e: unknown) => {
+      throw new Error(`${host}: ${e instanceof Error ? e.message : String(e)}`);
+    });
     if (res.status === 404 || res.status === 400) return null;
-    if (!res.ok) throw new Error(`${new URL(url).host}: HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`${host}: HTTP ${res.status}`);
     return res.json() as Promise<unknown>;
   }
 
@@ -298,13 +302,21 @@ async function findDeposit(tx: BtcTx, client: BtcRefundClient, vout?: number): P
   return { vout: vout ?? 0, msg: null };
 }
 
-/** The first chain that knows the hash, with its transaction. */
-async function locate(txid: string, clients: BtcRefundClient[]): Promise<{ client: BtcRefundClient; tx: BtcTx } | null> {
+/**
+ * The first chain that knows the hash, with its transaction; otherwise the chains whose explorer failed (unreachable,
+ * refused, rate-limited). A failed lookup says nothing about the hash, so it must never read as "no transaction".
+ */
+async function locate(txid: string, clients: BtcRefundClient[]): Promise<{ client: BtcRefundClient; tx: BtcTx } | { failed: string[] }> {
+  const failed: string[] = [];
   for (const client of clients) {
-    const tx = await client.depositTx(txid).catch(() => null);
-    if (tx) return { client, tx };
+    try {
+      const tx = await client.depositTx(txid);
+      if (tx) return { client, tx };
+    } catch (e) {
+      failed.push(`${UTXO_CHAINS[client.chain].name}: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
-  return null;
+  return { failed };
 }
 
 const chainNames = (clients: BtcRefundClient[]): string => clients.map((c) => UTXO_CHAINS[c.chain].name).join(" or ");
@@ -315,7 +327,11 @@ export async function btcDepositFacts(raw: string, clients: BtcRefundClient | Bt
   const txid = raw.trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(txid)) return { error: `not a ${chainNames(list)} transaction hash (64 hex characters)` };
   const found0 = await locate(txid, list);
-  if (!found0) return { error: `no ${chainNames(list)} transaction with this hash` };
+  if ("failed" in found0) {
+    return found0.failed.length
+      ? { error: `could not check this hash (${found0.failed.join("; ")}), so this says nothing about the deposit yet. Try again, or from another network.` }
+      : { error: `no ${chainNames(list)} transaction with this hash` };
+  }
   const { client, tx } = found0;
   if (vout !== undefined && !tx.outputs[vout]) return { error: `the transaction has no output ${vout}` };
 

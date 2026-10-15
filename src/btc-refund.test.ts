@@ -201,6 +201,40 @@ describe("checkBtcDeposit", () => {
     expect(await checkBtcDeposit("ab".repeat(32), publicUtxoRefundClients(recordedFetch()), NOW)).toEqual({ error: "no Bitcoin or Zcash transaction with this hash" });
   });
 
+  it("an explorer that cannot be reached is not a hash that does not exist", async () => {
+    const recorded = recordedFetch();
+    const offline = (async (input: string | URL | Request, init?: RequestInit) =>
+      String(input).startsWith(M) ? Promise.reject(new TypeError("Failed to fetch")) : recorded(input, init)) as typeof fetch;
+    expect(await checkBtcDeposit("ab".repeat(32), publicUtxoRefundClients(offline), NOW)).toEqual({
+      error: "could not check this hash (Bitcoin: mempool.space: Failed to fetch), so this says nothing about the deposit yet. Try again, or from another network.",
+    });
+  });
+
+  it("an explorer that refuses the request (HTTP 403) is reported, not taken for a missing transaction", async () => {
+    const recorded = recordedFetch();
+    const refusing = (async (input: string | URL | Request, init?: RequestInit) =>
+      String(input).startsWith(BLOCKCHAIR) ? new Response("blocked", { status: 403 }) : recorded(input, init)) as typeof fetch;
+    expect(await checkBtcDeposit("ab".repeat(32), publicUtxoRefundClients(refusing), NOW)).toEqual({
+      error: "could not check this hash (Zcash: api.blockchair.com: HTTP 403), so this says nothing about the deposit yet. Try again, or from another network.",
+    });
+  });
+
+  it("a failure further on names the service that failed", async () => {
+    const recorded = recordedFetch();
+    const noIndexer = (async (input: string | URL | Request, init?: RequestInit) =>
+      String(input).includes("api.bridge.nearone.org") ? Promise.reject(new TypeError("Failed to fetch")) : recorded(input, init)) as typeof fetch;
+    await expect(checkBtcDeposit(ZEC, publicUtxoRefundClients(noIndexer), NOW)).rejects.toThrow("mainnet.api.bridge.nearone.org: Failed to fetch");
+  });
+
+  it("a deposit one explorer finds is still found when the other explorer fails", async () => {
+    const recorded = recordedFetch();
+    const noBlockchair = (async (input: string | URL | Request, init?: RequestInit) =>
+      String(input).startsWith(BLOCKCHAIR) ? Promise.reject(new TypeError("Failed to fetch")) : recorded(input, init)) as typeof fetch;
+    const r = await checkBtcDeposit(STUCK, publicUtxoRefundClients(noBlockchair), NOW);
+    if ("error" in r) throw new Error(r.error);
+    expect(r.facts.chain).toBe("btc");
+  });
+
   it("reports a hash that is not a Bitcoin transaction", async () => {
     const r = await checkBtcDeposit("ab".repeat(32), publicBtcRefundClient(recordedFetch()), NOW);
     expect(r).toEqual({ error: "no Bitcoin transaction with this hash" });
