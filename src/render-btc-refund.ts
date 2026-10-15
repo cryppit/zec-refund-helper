@@ -2,7 +2,7 @@
 
 import type { BtcDepositReport } from "./btc-refund.js";
 import { describeDuration } from "./core/duration.js";
-import { refundPath, REQUEST_WINDOW, UTXO_CHAINS, type BoardRow, type BtcDepositFacts, type UtxoChain } from "./core/btc-refund.js";
+import { refundPath, REQUEST_WINDOW, UTXO_CHAINS, type BoardRow, type BtcDepositFacts, type BtcDepositVerdict, type UtxoChain } from "./core/btc-refund.js";
 import { classifyZcashAddress, describeZcashAddress } from "./core/zcash-address.js";
 
 type Report = Exclude<BtcDepositReport, { error: string }>;
@@ -151,9 +151,56 @@ export function renderBtcRefundText(r: Report): string {
     });
     lines.push(NEAR_CLI_TIMEOUT_NOTE);
   }
+  const privacy = privacyLines(r);
+  if (privacy.length) {
+    lines.push("");
+    lines.push("What others can see:");
+    for (const line of privacy) lines.push(`- ${line}`);
+  }
   lines.push("");
   lines.push(sourcesLine(r));
   return lines.join("\n");
+}
+
+/** The refund address, for the states that have a refund to talk about. */
+function refundAddressOf(v: BtcDepositVerdict): string | null {
+  switch (v.state) {
+    case "requested":
+    case "ready":
+    case "executed":
+    case "refunded":
+    case "refundable":
+      return v.refundTo;
+    default:
+      return null;
+  }
+}
+
+/**
+ * What anyone watching the chains can see about this deposit, and what stays hidden. The bridge only takes deposits at
+ * transparent addresses, so the way in is public; a refund to an address with an Orchard receiver stays shielded.
+ */
+export function privacyLines(r: Report): string[] {
+  const f = r.facts;
+  if (!f.msg) return [];
+  const lines: string[] = [];
+  if (f.chain === "btc") {
+    lines.push(`Public: the sender, ${f.senders.join(", ") || "the sending wallet"}; Bitcoin has no shielded pool.`, "Public: the amount and the bridge's deposit address.");
+  } else {
+    if (f.funding.kind === "shielded") lines.push(`Hidden: the sender; the ZEC came straight from ${poolName(f)}.`);
+    else if (f.funding.kind === "mixed") lines.push(`Partly public: the transparent sender ${f.senders.join(", ")} is public; the rest came from ${poolName(f)}, which hides its sender.`);
+    else lines.push(`Public: the sender, ${f.senders.join(", ") || "a transparent address"}.`);
+    lines.push("Public: the amount and the bridge's deposit address; the bridge only takes deposits at transparent addresses, so every deposit is visible on the way in.");
+  }
+  if (r.orderAccount) lines.push(`Public: the NEAR account this deposit is for, ${r.orderAccount}, named in the bridge's deposit message.`);
+  const refundTo = refundAddressOf(r.verdict);
+  if (refundTo) {
+    const path = f.chain === "zcash" ? refundPath("zcash", refundTo) : "transparent";
+    if (path === "shielded") lines.push("Hidden: where a refund goes; it lands in the shielded pool (Orchard), where only the amount is visible.");
+    else if (path === "transparent") lines.push(`Public: the refund, ${f.chain === "btc" ? "an ordinary Bitcoin payment" : "a transparent payment"} to ${refundTo}.`);
+  }
+  if (r.steps.length) lines.push("Public: the NEAR account that signs the steps above, linked to this deposit for good.");
+  return lines;
 }
 
 /** Who signs the steps and where the coin can go; null when nothing is left to do. */

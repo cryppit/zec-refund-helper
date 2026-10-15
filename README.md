@@ -146,7 +146,10 @@ Bitcoin's keeps 52,704 blocks, about a year. The tool prints the date to request
 ## What others can see
 
 The tool runs no server and stores nothing: the web page and the CLI ask public services directly. Those services can
-still see who is asking, and the refund itself happens in public.
+still see who is asking, and the refund itself happens in public. Every report ends with the same list for its own
+deposit, under "What others can see": whether the sender is hidden or public, that the amount and the bridge's deposit
+address are public (the bridge only takes deposits at transparent addresses, so the way in is always visible), the
+NEAR account the deposit is for, whether a refund would stay shielded, and that whoever signs the steps is public.
 
 - **Each lookup** goes to mempool.space (Bitcoin), Blockchair (Zcash), the Omni bridge indexer
   (`mainnet.api.bridge.nearone.org`) and a NEAR RPC provider (FastNEAR, with `near.drpc.org` and

@@ -62,6 +62,7 @@ function renderDeposit(v: DepositView): HTMLElement {
     card.append(el("h3", { text: "What is left" }), el("p", { className: "muted", text: v.stepsIntro }), steps);
     if (v.timeoutNote) card.append(el("p", { className: "muted", text: v.timeoutNote }));
   }
+  if (v.privacy.length) card.append(el("h3", { text: "What others can see" }), el("ul", { className: "privacy" }, ...v.privacy.map((line) => el("li", { text: line }))));
   card.append(el("p", { className: "sources", text: v.sources }));
   return card;
 }

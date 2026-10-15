@@ -82,6 +82,27 @@ describe("renderBtcRefundText", () => {
     expect(notOmni).toContain("A deposit through the PoA bridge is not covered here.");
     for (const text of [credited, notOmni]) expect(text).not.toMatch(/Where's My Swap|wheres-my-swap|higgsfield/i);
   });
+
+  it("says what others can see about a Bitcoin deposit: all of it, since Bitcoin has no shielded pool", () => {
+    expect(report(FACTS, 1_791_900_000)).toContain(
+      [
+        "What others can see:",
+        `- Public: the sender, ${SENDER}; Bitcoin has no shielded pool.`,
+        "- Public: the amount and the bridge's deposit address.",
+        `- Public: the NEAR account this deposit is for, ${ORDER}, named in the bridge's deposit message.`,
+        `- Public: the refund, an ordinary Bitcoin payment to ${SENDER}.`,
+        "- Public: the NEAR account that signs the steps above, linked to this deposit for good.",
+      ].join("\n"),
+    );
+  });
+
+  it("a credited deposit has nothing to sign or refund in what others can see; a hash that is no bridge deposit has no such section", () => {
+    const credited = report({ ...FACTS, request: null, bridgeHolds: true }, 1_791_900_000);
+    expect(credited).toContain("What others can see:");
+    expect(credited).not.toContain("signs the steps above");
+    expect(credited).not.toContain("Public: the refund");
+    expect(report({ ...FACTS, request: null, msg: null }, 1_791_900_000)).not.toContain("What others can see");
+  });
 });
 
 describe("renderBtcRefundText for Zcash", () => {
@@ -141,6 +162,26 @@ describe("renderBtcRefundText for Zcash", () => {
     const text = zreport({ ...ZFACTS, amountSat: 10_000 });
     expect(text).toContain("It is not larger than the refund fee (10000 zatoshis), so the contract would refuse a refund request.");
     expect(text).not.toContain("1. ");
+  });
+
+  it("a shielded-funded deposit: the sender stays hidden, the way in is public, and a refund to its unified address stays shielded", () => {
+    const text = zreport(ZFACTS);
+    expect(text).toContain("- Hidden: the sender; the ZEC came straight from the Ironwood shielded pool.");
+    expect(text).toContain(
+      "- Public: the amount and the bridge's deposit address; the bridge only takes deposits at transparent addresses, so every deposit is visible on the way in.",
+    );
+    expect(text).toContain("- Hidden: where a refund goes; it lands in the shielded pool (Orchard), where only the amount is visible.");
+  });
+
+  it("a transparent deposit and a transparent refund are public", () => {
+    const text = zreport({ ...ZFACTS, senders: ["t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1"], funding: { kind: "transparent", pools: [] }, msg: { recipient_id: "intents.near", refund_address: "t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1" } });
+    expect(text).toContain("- Public: the sender, t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1.");
+    expect(text).toContain("- Public: the refund, a transparent payment to t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1.");
+  });
+
+  it("a deposit funded partly from a shielded pool says which part is public", () => {
+    const text = zreport({ ...ZFACTS, senders: ["t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1"], funding: { kind: "mixed", pools: ["Sapling"] } });
+    expect(text).toContain("- Partly public: the transparent sender t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1 is public; the rest came from the Sapling shielded pool, which hides its sender.");
   });
 
   it("a Sapling-only refund address (synthetic): says the connector cannot pay it, and gives no commands", () => {

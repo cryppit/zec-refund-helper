@@ -3,7 +3,7 @@
 import type { BtcDepositReport } from "../btc-refund.js";
 import { UTXO_CHAINS, type BoardRow, type BtcDepositVerdict, type RefundStep, type UtxoChain } from "../core/btc-refund.js";
 import { describeDuration } from "../core/duration.js";
-import { fromWhom, headline, NEAR_CLI_TIMEOUT_NOTE, sourcesLine, stepsIntro } from "../render-btc-refund.js";
+import { fromWhom, headline, NEAR_CLI_TIMEOUT_NOTE, privacyLines, sourcesLine, stepsIntro } from "../render-btc-refund.js";
 
 type Report = Exclude<BtcDepositReport, { error: string }>;
 export type Tone = "ok" | "warn" | "bad" | "info";
@@ -25,6 +25,8 @@ export interface DepositView {
   steps: RefundStep[];
   timeoutNote: string | null;
   sources: string;
+  /** What anyone watching the chains can see about the deposit, and what stays hidden (the CLI's own lines). */
+  privacy: string[];
 }
 
 const TITLE: Record<BtcDepositVerdict["state"], [string, Tone]> = {
@@ -87,6 +89,7 @@ export function depositView(r: Report): DepositView {
     steps: r.steps,
     timeoutNote: intro ? NEAR_CLI_TIMEOUT_NOTE : null,
     sources: sourcesLine(r),
+    privacy: privacyLines(r),
   };
 }
 

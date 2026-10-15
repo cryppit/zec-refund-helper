@@ -75,6 +75,16 @@ describe("depositView", () => {
     expect(v.sources).toContain("We never hold keys or sign anything.");
   });
 
+  it("carries the CLI's own list of what others can see", () => {
+    expect(v.privacy).toEqual([
+      "Public: the sender, bc1qyp0a54gjhej46zdztq5w0ux2waqg3kacls7q2t; Bitcoin has no shielded pool.",
+      "Public: the amount and the bridge's deposit address.",
+      "Public: the NEAR account this deposit is for, f3de655c605a4ca01e000e7961a969687678efaf3bd6c6dff13cea3cb50ab807, named in the bridge's deposit message.",
+      "Public: the refund, an ordinary Bitcoin payment to bc1qyp0a54gjhej46zdztq5w0ux2waqg3kacls7q2t.",
+      "Public: the NEAR account that signs the steps above, linked to this deposit for good.",
+    ]);
+  });
+
   it("tells a credited deposit apart, with nothing left to do", () => {
     const credited = depositView(reportOf({ ...FACTS, bridgeHolds: true, request: null }));
     expect(credited.title).toBe("Credited");

@@ -66,3 +66,5 @@ footer { margin-top: 56px; font-size: 14px; }
   dt { margin-top: 8px; }
   .cmd { flex-direction: column; }
 }
+.privacy { margin: 6px 0 0; padding-left: 20px; }
+.privacy li { margin: 4px 0; }
