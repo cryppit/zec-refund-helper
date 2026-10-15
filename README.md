@@ -11,6 +11,13 @@ your browser against public sources only).
 Demo video (1:28): https://cryppit.github.io/zec-refund-helper/demo.mp4 (also attached to the
 [v0.1.0 release](https://github.com/cryppit/zec-refund-helper/releases/tag/v0.1.0)).
 
+Used for real: on 15 October 2026 this tool's own steps returned a 0.0999 BTC deposit, stuck since August, to the
+address that sent it. NEAR: `execute_refund`
+[4PGHNZKm…](https://explorer.near.org/transactions/4PGHNZKmQNFbhGCPXz2UrFZ4ShKwPWyL2MEkzcctqk8W) and
+`sign_btc_transaction` [GHLP7iAs…](https://explorer.near.org/transactions/GHLP7iAs6ePDp12H8tLXJp3E7qZE4x8ft4j88xd5oBVB);
+Bitcoin: [51623f37…](https://mempool.space/tx/51623f3708759b1e92554854458908936c6d1df4444a89a654ac04fa2d667032), block
+971,560. It cost 1 NEAR, which the contract keeps, plus less than 0.0001 NEAR in fees.
+
 ## The problem
 
 To swap ZEC through NEAR Intents, a wallet or app sends ZEC to a deposit address of the Omni bridge's Zcash connector

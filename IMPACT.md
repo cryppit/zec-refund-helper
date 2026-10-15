@@ -23,7 +23,8 @@ What it means:
   never credited on NEAR and never refunded. 24 of them (6.30 BTC) can be recovered by their senders through the
   connector's own permissionless refund; 3 cannot (one names a public example address as its refund address, two are
   no larger than the refund fee). Two deposits alone are 1.998 BTC (12 days old) and 1.8 BTC (138 days old). One
-  refund (0.1 BTC) has been ready for 41 days and nobody has executed it. The total is growing: two of the five
+  refund (0.1 BTC) has been ready for 41 days and nobody has executed it (we executed it on 2026-10-15 with this
+  tool's steps: Bitcoin transaction 51623f37…, block 971,560). The total is growing: two of the five
   deposits pending at the snapshot were still uncredited 9 to 13 hours later (another 0.05093722 BTC).
 - **Zcash:** no ZEC deposit sits uncredited at a deposit address. Every uncredited ZEC deposit is one the
   connector absorbed below its 0.001 ZEC minimum. That money is small (0.0226 ZEC), but nobody can recover it today,
