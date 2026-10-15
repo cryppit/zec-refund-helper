@@ -8,7 +8,7 @@ Keyless and read-only: it never asks for, sees or holds a key, and it never sign
 Live demo: https://cryppit.github.io/zec-refund-helper/ (this repository's own web page, `web/`: the same checks, run in
 your browser against public sources only).
 
-Demo video (1:20): https://cryppit.github.io/zec-refund-helper/demo.mp4 (also attached to the
+Demo video (1:28): https://cryppit.github.io/zec-refund-helper/demo.mp4 (also attached to the
 [v0.1.0 release](https://github.com/cryppit/zec-refund-helper/releases/tag/v0.1.0)).
 
 ## The problem
