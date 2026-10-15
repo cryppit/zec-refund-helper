@@ -74,9 +74,13 @@ describe("renderBtcRefundText", () => {
     );
   });
 
-  it("credited and not-a-deposit headlines", () => {
-    expect(report({ ...FACTS, request: null, bridgeHolds: true }, 1_791_900_000)).toContain(`CREDITED  the bridge took this deposit in; follow its order account ${ORDER} in Where's My Swap`);
-    expect(report({ ...FACTS, request: null, msg: null }, 1_791_900_000)).toContain("NOT AN OMNI BTC DEPOSIT");
+  it("credited and not-a-deposit headlines stand alone, with no pointer to another product", () => {
+    const credited = report({ ...FACTS, request: null, bridgeHolds: true }, 1_791_900_000);
+    const notOmni = report({ ...FACTS, request: null, msg: null }, 1_791_900_000);
+    expect(credited).toContain(`CREDITED  the bridge took this deposit in; its NEAR order account is ${ORDER}.`);
+    expect(notOmni).toContain("NOT AN OMNI BTC DEPOSIT");
+    expect(notOmni).toContain("A deposit through the PoA bridge is not covered here.");
+    for (const text of [credited, notOmni]) expect(text).not.toMatch(/Where's My Swap|wheres-my-swap|higgsfield/i);
   });
 });
 

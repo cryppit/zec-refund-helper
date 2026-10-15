@@ -15,7 +15,7 @@
 // Before opening the wallet: re-read the config (the deposit must be the live one) and keep {chain, txid, vout, step}
 // so a redirecting wallet can resume. After it returns, confirm on chain rather than trusting the wallet: look the hash
 // up with EXPERIMENTAL_tx_status and wait_until "FINAL" (core/rpc.ts's nearRpc), decode its NEP-297 event logs
-// (Where's My Swap's decodeTxStatus does this), and take `pendingIdOf(events, chain)`: the btc_pending_id that the
+// (the EVENT_JSON: lines in the receipts' logs), and take `pendingIdOf(events, chain)`: the btc_pending_id that the
 // sign call needs, from the execute's generate_btc_pending_info event. Then re-run checkBtcDeposit (src/btc-refund.ts):
 // it shows REFUND EXECUTED, so `refundCalls(facts, verdict, config, pendingId)` gives sign_btc_transaction, and
 // REFUNDED once the refund transaction is on the chain. After a wallet error or a timeout never send again blindly:
@@ -163,7 +163,7 @@ export function upfrontYocto(gas: bigint, depositYocto: bigint): bigint {
   return depositYocto + gas * GAS_BUY_PRICE_YOCTO;
 }
 
-/** A NEP-297 event as a decoder gives it (Where's My Swap's decodeTxStatus). */
+/** A NEP-297 event as a decoder gives it, from an `EVENT_JSON:` log line. */
 export interface BridgeEvent {
   standard: string;
   event: string;

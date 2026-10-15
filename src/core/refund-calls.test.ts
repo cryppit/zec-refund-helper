@@ -163,7 +163,7 @@ describe("upfrontYocto: what the signing account must hold while a call runs", (
 });
 
 describe("pendingIdOf: the btc_pending_id the sign call needs, from the execute_refund outcome", () => {
-  // Events as a NEP-297 decoder gives them (Where's My Swap's decodeTxStatus) from the connector's log
+  // Events as a NEP-297 decoder gives them from the connector's log
   // EVENT_JSON:{"standard":"bridge","version":"1.0.0","event":"generate_btc_pending_info","data":[{"account_id":"…","btc_pending_id":"…"}]}
   const event = (over: Partial<BridgeEvent> = {}): BridgeEvent => ({
     standard: "bridge",

@@ -67,7 +67,9 @@ describe("depositView", () => {
 
   it("carries the CLI's own headline, steps and sources", () => {
     expect(v.headline[0]).toBe("READY TO REFUND  the refund was requested on 2026-08-19 and its lock ended on 2026-09-02; nobody has executed it yet.");
-    expect(v.stepsIntro).toBe("Sign each step with your own NEAR account; anyone can pay these fees, and the coin can only go to the address above.");
+    expect(v.stepsIntro).toBe(
+      "Sign each step with a NEAR account you control; anyone can pay these fees, and the coin can only go to the address above. That account is linked to this deposit in public, so for privacy use one not tied to your name or main wallet.",
+    );
     expect(v.steps.map((s) => s.title)).toEqual(["Let near-cli sign as your NEAR account (once)", "Execute the refund (1 NEAR, not returned)", "Have the bridge sign the Bitcoin refund"]);
     expect(v.timeoutNote).toContain("look the transaction up on nearblocks.io before sending it again");
     expect(v.sources).toContain("We never hold keys or sign anything.");

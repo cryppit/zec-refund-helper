@@ -7,9 +7,6 @@ import { classifyZcashAddress, describeZcashAddress } from "./core/zcash-address
 
 type Report = Exclude<BtcDepositReport, { error: string }>;
 
-/** The full NEAR Intents order checker this helper was extracted from. */
-const CHECKER = "Where's My Swap (https://wheres-my-swap.higgsfield.app)";
-
 const day = (sec: number): string => new Date(sec * 1000).toISOString().slice(0, 10);
 const when = (sec: number): string => new Date(sec * 1000).toISOString().replace("T", " ").slice(0, 16) + " UTC";
 const coins = (sat: number): string => (sat / 1e8).toFixed(8);
@@ -62,10 +59,10 @@ function requestLines(r: Report, refundTo: string): string[] {
 }
 
 /**
- * What happened to the deposit: the state in capitals, then why (and, for a request, where it goes and its fee). `checker`
- * names where to follow a credited order (the CLI points to Where's My Swap); the web page passes null and stands alone.
+ * What happened to the deposit: the state in capitals, then why (and, for a request, where it goes and its fee).
+ * The CLI and the web page say the same thing.
  */
-export function headline(r: Report, checker: string | null = CHECKER): string[] {
+export function headline(r: Report): string[] {
   const v = r.verdict;
   const f = r.facts;
   const { name, minor } = UTXO_CHAINS[f.chain];
@@ -75,10 +72,10 @@ export function headline(r: Report, checker: string | null = CHECKER): string[] 
     case "not_a_deposit":
       return [
         `NOT AN OMNI ${f.chain.toUpperCase()} DEPOSIT  no output of this transaction pays a deposit address the Omni ${name} bridge knows.`,
-        checker ? `A deposit through the PoA bridge is not covered here: paste the same hash into ${checker}.` : "A deposit through the PoA bridge is not covered here.",
+        "A deposit through the PoA bridge is not covered here.",
       ];
     case "credited":
-      return [checker ? `CREDITED  the bridge took this deposit in; follow its order account ${v.orderAccount} in ${checker}.` : `CREDITED  the bridge took this deposit in; its NEAR order account is ${v.orderAccount}.`];
+      return [`CREDITED  the bridge took this deposit in; its NEAR order account is ${v.orderAccount}.`];
     case "absorbed":
       return [
         `ABSORBED  the bridge verified this deposit but it is below the ${v.minDepositSat}-${minor.replace(/s$/, "")} minimum, so nothing was minted on NEAR. The contract keeps the coin in its unavailable UTXOs and has no refund path for it: request_refund refuses a verified deposit, and no method spends or releases it.`,
@@ -163,7 +160,7 @@ export function renderBtcRefundText(r: Report): string {
 export function stepsIntro(r: Report): string | null {
   if (!r.steps.length) return null;
   const where = r.verdict.state === "refundable" && r.verdict.refundTo === null ? "the address named in the request" : "the address above";
-  return `Sign each step with your own NEAR account; anyone can pay these fees, and the coin can only go to ${where}.`;
+  return `Sign each step with a NEAR account you control; anyone can pay these fees, and the coin can only go to ${where}. That account is linked to this deposit in public, so for privacy use one not tied to your name or main wallet.`;
 }
 
 // nearcore 2.14 changes the RPC's timeout error; older near CLIs can report one for a call that landed.

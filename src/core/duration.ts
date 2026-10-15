@@ -1,4 +1,4 @@
-// A wait in plain words (from Where's My Swap's trace module, where it names delays).
+// A wait in plain words, as the reports name delays and timelocks.
 
 export function describeDuration(sec: number): string {
   if (sec < 90) return `${sec} s`;

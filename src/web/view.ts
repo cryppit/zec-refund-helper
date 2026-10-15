@@ -82,7 +82,7 @@ export function depositView(r: Report): DepositView {
     title,
     tone,
     facts,
-    headline: headline(r, null),
+    headline: headline(r),
     stepsIntro: intro,
     steps: r.steps,
     timeoutNote: intro ? NEAR_CLI_TIMEOUT_NOTE : null,

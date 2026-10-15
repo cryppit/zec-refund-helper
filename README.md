@@ -143,6 +143,38 @@ Bitcoin's keeps 52,704 blocks, about a year. The tool prints the date to request
 - **The user signs.** Every step is a NEAR transaction the user signs with their own NEAR account, through
   `bridge-cli` or `near` CLI. Anyone may pay for these calls; that changes nothing about where the coin goes.
 
+## What others can see
+
+The tool runs no server and stores nothing: the web page and the CLI ask public services directly. Those services can
+still see who is asking, and the refund itself happens in public.
+
+- **Each lookup** goes to mempool.space (Bitcoin), Blockchair (Zcash), the Omni bridge indexer
+  (`mainnet.api.bridge.nearone.org`) and a NEAR RPC provider (FastNEAR, with `near.drpc.org` and
+  `rpc.mainnet.near.org` as fallbacks). Each one sees your IP address next to the hash or account you ask about.
+  `--scan` also asks CoinGecko for prices. GitHub serves the page but never sees the hash: browsers keep the part of a
+  `#q=` link after the `#` to themselves.
+- **To hide your IP, look up over Tor, or through a VPN you trust.** On the web, open the page in Tor Browser (at
+  the Standard or Safer security level; Safest turns off the JavaScript the page needs). For the CLI, start Tor with
+  an HTTP tunnel port and let Node send its requests through it (Node 22.21 or 24 and later):
+
+  ```bash
+  tor --HTTPTunnelPort 9080 &
+  NODE_USE_ENV_PROXY=1 HTTPS_PROXY=http://127.0.0.1:9080 pnpm zec-refund <hash>
+  ```
+
+  Expect retries. The bridge indexer (HTTP 403) and mempool.space (no answer) refuse many Tor exit relays: in our tests
+  on 2026-10-15 the page worked on 1 of 4 Tor routes, and the CLI on the one route we tried, where Tor's own check
+  confirmed the requests left through Tor and the three example deposits and `--board` gave the same answers as
+  without it, in 12 to 15 seconds each. When a service refuses, the tool names it and says it could not check, never
+  that the deposit does not exist. Ask Tor for a new circuit (in Tor Browser, "New Tor circuit for this site") and try
+  again.
+- **The refund steps are public.** They are NEAR transactions, and the account that signs them is linked to the
+  deposit for good. Anyone may sign them, so if that matters, sign from an account that is not tied to your name or
+  main wallet, and fund it from somewhere that is not linked to you either: the funding transfer is public too.
+- **So is a transparent refund.** A refund to a Bitcoin address or a Zcash `t1…` address is an ordinary public
+  transfer. A unified address with an Orchard receiver gets a shielded refund, so where the ZEC goes next stays off
+  the transparent chain; the deposit and the refunded amount stay visible.
+
 ## Quickstart
 
 Node 22.15 or newer, pnpm 11.
@@ -210,8 +242,15 @@ return the fields that source defines.
   execute, the `near` CLI for the rest, and a NEAR account with a little more NEAR than each deposit: 2 NEAR to request
   and 1 NEAR to execute, both kept by the contract, plus up to 0.3 NEAR held for gas while a call runs.
 - **Mainnet only.** The connector accounts and RPC endpoint are hard-coded for mainnet.
-- Only Omni bridge deposits. A deposit through the PoA bridge or a NEAR Intents order account is checked in
-  Where's My Swap instead.
+- Only Omni bridge deposits. Deposits through the PoA bridge, and what a NEAR Intents order does after the bridge
+  credits it, are out of scope.
+
+## Built for ZECATHON 2026
+
+All the code here was written during the hackathon's build window (28 September to 28 October 2026). The refund
+logic was first written between 10 and 14 October inside the Where's My Swap app of Cryppit's private monorepo, then
+moved into this repository on 13 and 14 October; the first commit says so. Only the refund code moved. Where's My
+Swap, our NEAR Intents order checker, is a separate product and not part of this entry.
 
 ## Licence
 
