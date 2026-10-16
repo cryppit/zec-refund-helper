@@ -9,9 +9,9 @@ Live demo: https://cryppit.github.io/zec-refund-helper/ (this repository's own w
 your browser against public sources only).
 
 Demo video (1:59, with the 15 October refund on mainnet): https://cryppit.github.io/zec-refund-helper/demo.mp4 (also
-attached to the [v0.1.0 release](https://github.com/cryppit/zec-refund-helper/releases/tag/v0.1.0)). The video says a
-shielded refund goes back "through Orchard"; to be exact, since NU6.3 it lands in the Ironwood pool, at the address's
-Orchard receiver ([why](#why-a-shielded-refund-needs-a-bundle-from-bridge-cli)).
+attached to the [v0.1.0 release](https://github.com/cryppit/zec-refund-helper/releases/tag/v0.1.0)). Updated on 16
+October: a shielded refund now lands in the Ironwood pool since NU6.3, and the video says so
+([why](#why-a-shielded-refund-needs-a-bundle-from-bridge-cli)).
 
 Used for real: on 15 October 2026 this tool's own steps returned a 0.0999 BTC deposit, stuck since August, to the
 address that sent it. NEAR: `execute_refund`
