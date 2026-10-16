@@ -31,7 +31,7 @@ export const CONNECTOR: Record<UtxoChain, string> = { btc: "btc-connector.bridge
 
 /**
  * Which refund the connector can build to an address. Bitcoin: always a transparent output. Zcash: `shielded` when
- * it is a unified address with an Orchard receiver (bridge-cli's default Orchard bundle), `transparent` when it is a
+ * it is a unified address with an Orchard receiver (bridge-cli's default shielded bundle), `transparent` when it is a
  * t-address, a TEX address or a unified address with only a transparent receiver among those two, `none` otherwise
  * (Sapling, Sprout, a unified address with neither, or not a valid address): such a refund can never be executed.
  */
@@ -63,7 +63,7 @@ export const SIGNER_PLACEHOLDER = "<your-account.near>";
 /** Lets near-cli sign as the user's own account: "import existing account (a.k.a. 'sign in')" (docs.near.org /tools/cli). */
 export const NEAR_CLI_SIGN_IN = "near account import-account using-web-wallet network-config mainnet";
 
-/** `chain_specific_data` null: Bitcoin ignores it; on Zcash it means a transparent refund (no Orchard bundle). */
+/** `chain_specific_data` null: Bitcoin ignores it; on Zcash it means a transparent refund (no shielded bundle). */
 export interface ExecuteRefundArgs {
   utxo_storage_key: string;
   chain_specific_data: null;
@@ -117,7 +117,7 @@ export interface CallConfig {
 
 /**
  * The calls a wallet can sign for this deposit now: `execute_refund` when the verdict is `ready` (on Zcash only for a
- * transparent refund: a shielded one needs bridge-cli's Orchard bundle), `sign_btc_transaction` when it is `executed`
+ * transparent refund: a shielded one needs bridge-cli's shielded bundle), `sign_btc_transaction` when it is `executed`
  * and the execute's btc_pending_id is known (`pendingIdOf`). Nothing otherwise: a request needs bridge-cli's proof.
  */
 export function refundCalls(f: CallFacts, v: CallVerdict, c: CallConfig, btcPendingId?: string): NearCall[] {

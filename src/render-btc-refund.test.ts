@@ -134,6 +134,15 @@ describe("renderBtcRefundText for Zcash", () => {
     expect(text).not.toContain("Several wallets");
   });
 
+  it("a shielded refund since NU6.3: bridge-cli v0.3.69 or later builds the bundle, and the refund lands in the Ironwood pool", () => {
+    const text = zreport(ZFACTS);
+    expect(text).toContain("So bridge-cli (v0.3.69 or later) builds the shielded bundle (the proof, the encrypted note, the exact amount)");
+    expect(text).toContain("Since NU6.3 no new value can enter the Orchard pool, so the refund lands in the Ironwood pool, at this same Orchard receiver: no new address is needed.");
+    expect(text).toContain("Shielded is not hidden: the refund's address and amount can be read (see What others can see).");
+    expect(text).not.toContain("Orchard bundle");
+    expect(text).not.toContain("off the transparent chain");
+  });
+
   it("synthetic, a shielded-funded deposit without a refund address: explains there is no sender and how to name your own address", () => {
     const text = zreport({ ...ZFACTS, msg: { recipient_id: "intents.near", safe_deposit: { msg: `{"receiver_id":"${ORDER}"}` } } });
     expect(text).not.toContain("Several wallets");
@@ -143,10 +152,10 @@ describe("renderBtcRefundText for Zcash", () => {
     expect(text).toContain("the coin can only go to the address named in the request.");
   });
 
-  it("a transparent t-address refund: execute with near-cli, no Orchard bundle", () => {
+  it("a transparent t-address refund: execute with near-cli, no shielded bundle", () => {
     const text = zreport({ ...ZFACTS, senders: ["t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1"], funding: { kind: "transparent", pools: [] }, msg: { recipient_id: "intents.near", refund_address: "t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1" } });
     expect(text).toContain("t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1, a transparent t-address.");
-    expect(text).toContain("A transparent refund: execute_refund pays this address one ordinary output, with no Orchard bundle, so near-cli can send it.");
+    expect(text).toContain("A transparent refund: execute_refund pays this address one ordinary output, with no shielded bundle, so near-cli can send it.");
     expect(text).toContain(`near contract call-function as-transaction zcash-connector.bridge.near execute_refund json-args '{"utxo_storage_key":"${ZFACTS.txid}@0","chain_specific_data":null}'`);
   });
 
@@ -164,13 +173,18 @@ describe("renderBtcRefundText for Zcash", () => {
     expect(text).not.toContain("1. ");
   });
 
-  it("a shielded-funded deposit: the sender stays hidden, the way in is public, and a refund to its unified address stays shielded", () => {
+  it("a shielded-funded deposit: the sender stays hidden, the way in is public, and a shielded refund's address and amount are public", () => {
     const text = zreport(ZFACTS);
     expect(text).toContain("- Hidden: the sender; the ZEC came straight from the Ironwood shielded pool.");
     expect(text).toContain(
       "- Public: the amount and the bridge's deposit address; the bridge only takes deposits at transparent addresses, so every deposit is visible on the way in.",
     );
-    expect(text).toContain("- Hidden: where a refund goes; it lands in the shielded pool (Orchard), where only the amount is visible.");
+    // The connector checks a refund's bundle by recovering its output with an all-zero outgoing viewing key, so anyone can.
+    expect(text).toContain(
+      `- Public: where the refund goes, ${UA}: the address is on NEAR (in the deposit message or the refund request), and the bridge writes shielded outputs with an all-zero outgoing viewing key, so anyone can recover the refund's recipient and amount from the Zcash transaction.`,
+    );
+    expect(text).toContain("- Hidden: what happens to the ZEC next, while it stays shielded; since NU6.3 the refund lands in the Ironwood pool, at this address's Orchard receiver.");
+    expect(text).not.toContain("Hidden: where a refund goes");
   });
 
   it("a transparent deposit and a transparent refund are public", () => {

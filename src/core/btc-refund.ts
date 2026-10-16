@@ -346,16 +346,17 @@ function executeStep(f: BtcDepositFacts, refundTo: string | null, c: RefundConfi
     return {
       title: `Execute the refund, transparent (${kept})`,
       command: nearCli,
-      note: `Anyone can call this once the lock has passed. It sends no Orchard bundle (chain_specific_data null), so the contract pays the refund address one transparent output.${attachExactly(fee)}${afterTaking}${needs(fee, REFUND_CALL_GAS)}${ONE_PENDING}`,
+      note: `Anyone can call this once the lock has passed. It sends no shielded bundle (chain_specific_data null), so the contract pays the refund address one transparent output.${attachExactly(fee)}${afterTaking}${needs(fee, REFUND_CALL_GAS)}${ONE_PENDING}`,
     };
   }
-  // A shielded refund needs bridge-cli: it builds the Orchard bundle, and it attaches the live deposit itself.
+  // A shielded refund needs bridge-cli (btc-execute-refund ships from v0.3.69, already building Ironwood outputs): it
+  // builds the bundle, and it attaches the live deposit itself.
   const alsoTransparent = refundTo !== null && classifyZcashAddress(refundTo).refund.transparent;
   return {
     title: `Execute the refund, shielded (${kept})`,
     command: `bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${f.txid} --vout ${f.vout}`,
     note:
-      "Anyone can call this once the lock has passed. bridge-cli builds an Orchard bundle, with its zero-knowledge proof, that pays the deposit minus the fee to the address's Orchard receiver; the contract checks that receiver and that amount before NEAR's MPC network signs the deposit input." +
+      "Anyone can call this once the lock has passed. bridge-cli (v0.3.69 or later) builds the shielded bundle, with its zero-knowledge proof, that pays the deposit minus the fee to the address's Orchard receiver; since NU6.3 the refund lands in the Ironwood pool. The contract checks that receiver and that amount before NEAR's MPC network signs the deposit input." +
       (alsoTransparent ? " The address also has a transparent receiver: add --transparent to refund there instead (public)." : "") +
       `${afterTaking}${needs(fee, BRIDGE_CLI_GAS, "bridge-cli's ")}${ONE_PENDING}`,
   };
@@ -380,7 +381,7 @@ function signInStep(steps: RefundStep[]): RefundStep[] {
 /**
  * What is left to do, as commands (Near-One/bridge-sdk-rs bridge-cli README, "Refund a never-finalized BTC deposit"):
  * bridge-cli for the request, which needs the deposit's inclusion proof, and for a shielded Zcash execute, which needs
- * the Orchard bundle; near-cli for the rest, printed from the calls a wallet would sign (core/refund-calls.ts). Empty
+ * the shielded bundle; near-cli for the rest, printed from the calls a wallet would sign (core/refund-calls.ts). Empty
  * when nothing is to be done, when the refund address cannot be told from the transaction (we never suggest any
  * address but the deposit's own or its single sender), or when the refund would return nothing.
  */

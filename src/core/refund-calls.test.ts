@@ -109,7 +109,7 @@ describe("refundCalls: the calls a wallet can sign now", () => {
     expect(refundCalls(f, v, CONFIG)).toEqual([]);
   });
 
-  it("Zcash: a transparent refund goes to zcash-connector.bridge.near; a shielded one needs bridge-cli's Orchard bundle; a Sapling-only address none", () => {
+  it("Zcash: a transparent refund goes to zcash-connector.bridge.near; a shielded one needs bridge-cli's shielded bundle; a Sapling-only address none", () => {
     const transparent = zfacts(T_ADDR);
     expect(refundCalls(transparent, btcDepositVerdict(transparent, ZCONFIG, AFTER_LOCK), ZCONFIG)).toEqual([
       { receiverId: "zcash-connector.bridge.near", methodName: "execute_refund", args: { utxo_storage_key: `${TXID}@0`, chain_specific_data: null }, gas: "250000000000000", deposit: "1000000000000000000000000" },

@@ -42,7 +42,7 @@ flowchart TD
   V3 --> S2
   S2 --> P{refundPath of the address}
   V4 --> P
-  P -- Orchard receiver --> S3a[3. bridge-cli btc-execute-refund --chain zcash<br/>builds the Orchard bundle: shielded]
+  P -- Orchard receiver --> S3a[3. bridge-cli btc-execute-refund --chain zcash<br/>builds the shielded bundle:<br/>Ironwood pool since NU6.3]
   P -- t-address --> S3b[3. near-cli execute_refund<br/>no bundle: transparent]
   S3a --> S4[4. sign_btc_transaction with near-cli:<br/>MPC signs, relayer broadcasts ZEC<br/>to the refund address only]
   S3b --> S4

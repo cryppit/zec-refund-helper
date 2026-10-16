@@ -27,18 +27,18 @@ export function fromWhom(f: BtcDepositFacts): string {
 /** The address, and for Zcash what kind it is. */
 const named = (chain: UtxoChain, address: string): string => (chain === "zcash" ? `${address}, ${describeZcashAddress(classifyZcashAddress(address))}` : address);
 
-/** For Zcash: which refund the connector can make to this address, and why a shielded one needs the Orchard bundle. */
+/** For Zcash: which refund the connector can make to this address, and why a shielded one needs a bundle built off-chain. */
 function zcashRefundLines(address: string): string[] {
   const a = classifyZcashAddress(address);
   const path = refundPath("zcash", address);
   if (path === "none") {
     return [
-      `The Zcash connector cannot pay ${describeZcashAddress(a)}: a refund is either one transparent output or an Orchard bundle, and this address has neither a transparent nor an Orchard receiver. A refund request to it would be accepted but could never be executed, so ask the Omni bridge team for help instead of paying for one.`,
+      `The Zcash connector cannot pay ${describeZcashAddress(a)}: a refund is either one transparent output or a shielded bundle paying an Orchard receiver, and this address has neither a transparent nor an Orchard receiver. A refund request to it would be accepted but could never be executed, so ask the Omni bridge team for help instead of paying for one.`,
     ];
   }
-  if (path === "transparent") return ["A transparent refund: execute_refund pays this address one ordinary output, with no Orchard bundle, so near-cli can send it."];
+  if (path === "transparent") return ["A transparent refund: execute_refund pays this address one ordinary output, with no shielded bundle, so near-cli can send it."];
   const why =
-    "The contract cannot write a shielded output by itself: an Orchard output needs a zero-knowledge proof made off-chain. So bridge-cli builds the Orchard bundle (the proof, the encrypted note, the exact amount) and passes it to execute_refund; the contract checks that it pays this address's Orchard receiver the deposit minus the fee, then NEAR's MPC network signs the deposit input. The refund lands in the shielded pool (the Ironwood pool since NU6.3): your address and what you do next with the ZEC stay off the transparent chain. The deposit and the refunded amount stay visible, as value entering a shielded pool always is.";
+    "The contract cannot write a shielded output by itself: it needs a note encrypted to the recipient and a zero-knowledge proof, made off-chain. So bridge-cli (v0.3.69 or later) builds the shielded bundle (the proof, the encrypted note, the exact amount) and passes it to execute_refund; the contract checks that it pays this address's Orchard receiver the deposit minus the fee, then NEAR's MPC network signs the deposit input. Since NU6.3 no new value can enter the Orchard pool, so the refund lands in the Ironwood pool, at this same Orchard receiver: no new address is needed. Shielded is not hidden: the refund's address and amount can be read (see What others can see).";
   if (a.refund.transparent) return [`This address also has a transparent receiver. bridge-cli refunds to its Orchard receiver by default (shielded); --transparent pays its transparent receiver instead, in public. ${why}`];
   return [`This address has no transparent receiver, so the refund must be shielded: execute_refund without a bundle would try a transparent output and fail. ${why}`];
 }
@@ -178,7 +178,9 @@ function refundAddressOf(v: BtcDepositVerdict): string | null {
 
 /**
  * What anyone watching the chains can see about this deposit, and what stays hidden. The bridge only takes deposits at
- * transparent addresses, so the way in is public; a refund to an address with an Orchard receiver stays shielded.
+ * transparent addresses, so the way in is public. A refund to an address with an Orchard receiver is shielded (since
+ * NU6.3 in the Ironwood pool) but readable: the address is on NEAR, and the connector checks the bundle by recovering
+ * its output with an all-zero outgoing viewing key (orchard_policy.rs, BRIDGE_OVK), which anyone can do too.
  */
 export function privacyLines(r: Report): string[] {
   const f = r.facts;
@@ -196,7 +198,12 @@ export function privacyLines(r: Report): string[] {
   const refundTo = refundAddressOf(r.verdict);
   if (refundTo) {
     const path = f.chain === "zcash" ? refundPath("zcash", refundTo) : "transparent";
-    if (path === "shielded") lines.push("Hidden: where a refund goes; it lands in the shielded pool (Orchard), where only the amount is visible.");
+    if (path === "shielded") {
+      lines.push(
+        `Public: where the refund goes, ${refundTo}: the address is on NEAR (in the deposit message or the refund request), and the bridge writes shielded outputs with an all-zero outgoing viewing key, so anyone can recover the refund's recipient and amount from the Zcash transaction.`,
+        "Hidden: what happens to the ZEC next, while it stays shielded; since NU6.3 the refund lands in the Ironwood pool, at this address's Orchard receiver.",
+      );
+    }
     else if (path === "transparent") lines.push(`Public: the refund, ${f.chain === "btc" ? "an ordinary Bitcoin payment" : "a transparent payment"} to ${refundTo}.`);
   }
   if (r.steps.length) lines.push("Public: the NEAR account that signs the steps above, linked to this deposit for good.");

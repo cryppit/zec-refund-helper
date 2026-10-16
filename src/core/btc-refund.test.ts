@@ -330,7 +330,7 @@ describe("refundPath: which execute_refund the connector can build for an addres
 });
 
 describe("refundSteps for Zcash refunds", () => {
-  it("a unified address with an Orchard receiver: bridge-cli btc-execute-refund builds the Orchard bundle by default", () => {
+  it("a unified address with an Orchard receiver: bridge-cli btc-execute-refund (v0.3.69 or later) builds the shielded bundle by default", () => {
     const f = zfacts({ msg: { ...withRefundAddress, refund_address: UA_ORCHARD_ONLY } });
     const steps = refundSteps(f, btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY), ZCONFIG);
     expect(steps.map((s) => s.title)).toEqual([
@@ -341,7 +341,8 @@ describe("refundSteps for Zcash refunds", () => {
       "Have the bridge sign the Zcash refund",
     ]);
     expect(steps[3]?.command).toBe(`bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${ZTX} --vout 0`);
-    expect(steps[3]?.note).toContain("Orchard bundle");
+    expect(steps[3]?.note).toContain("bridge-cli (v0.3.69 or later) builds the shielded bundle, with its zero-knowledge proof, that pays the deposit minus the fee to the address's Orchard receiver; since NU6.3 the refund lands in the Ironwood pool.");
+    expect(steps[3]?.note).not.toContain("Orchard bundle");
     expect(steps[3]?.note).not.toContain("--transparent");
     // bridge-cli attaches the live deposit itself, with its own 300 Tgas.
     expect(steps[3]?.note).toContain("The signing account needs a little over 1.3 NEAR: the 1 NEAR and 0.3 NEAR held for bridge-cli's 300 Tgas of gas");
@@ -365,7 +366,7 @@ describe("refundSteps for Zcash refunds", () => {
     expect(steps[3]?.note).toContain("--transparent");
   });
 
-  it("a t-address: the transparent refund with near-cli (no Orchard bundle to build), attaching exactly the live deposit", () => {
+  it("a t-address: the transparent refund with near-cli (no shielded bundle to build), attaching exactly the live deposit", () => {
     const f = zfacts({ msg: { ...withRefundAddress, refund_address: T_ADDR } });
     const steps = refundSteps(f, btcDepositVerdict(f, ZCONFIG, CONFIRMED + DAY), ZCONFIG);
     expect(steps[3]).toMatchObject({
@@ -373,6 +374,7 @@ describe("refundSteps for Zcash refunds", () => {
       command: nearCliCommand(refundCalls(f, { state: "ready", refundTo: T_ADDR }, ZCONFIG)[0]!),
     });
     expect(steps[3]?.command).toContain(`execute_refund json-args '{"utxo_storage_key":"${ZTX}@0","chain_specific_data":null}'`);
+    expect(steps[3]?.note).toContain("It sends no shielded bundle (chain_specific_data null), so the contract pays the refund address one transparent output.");
     expect(steps[3]?.note).toContain("Attach exactly 1 NEAR");
     expect(steps[0]?.note).toContain("NEAR_SIGNER"); // the request is still bridge-cli's
   });

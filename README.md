@@ -9,7 +9,9 @@ Live demo: https://cryppit.github.io/zec-refund-helper/ (this repository's own w
 your browser against public sources only).
 
 Demo video (1:59, with the 15 October refund on mainnet): https://cryppit.github.io/zec-refund-helper/demo.mp4 (also
-attached to the [v0.1.0 release](https://github.com/cryppit/zec-refund-helper/releases/tag/v0.1.0)).
+attached to the [v0.1.0 release](https://github.com/cryppit/zec-refund-helper/releases/tag/v0.1.0)). The video says a
+shielded refund goes back "through Orchard"; to be exact, since NU6.3 it lands in the Ironwood pool, at the address's
+Orchard receiver ([why](#why-a-shielded-refund-needs-a-bundle-from-bridge-cli)).
 
 Used for real: on 15 October 2026 this tool's own steps returned a 0.0999 BTC deposit, stuck since August, to the
 address that sent it. NEAR: `execute_refund`
@@ -62,21 +64,28 @@ Given a 64-hex transaction hash, it:
    over 2.3 NEAR to request, 1.25 to execute, 0.25 to sign), and that the 2 NEAR and 1 NEAR deposits are not returned:
    attach exactly what the command attaches, since the contract keeps anything extra too. On Zcash the execute
    depends on the refund address:
-   - to a unified address with an Orchard receiver, `bridge-cli mainnet btc-execute-refund --chain zcash` builds an
-     **Orchard bundle** and the refund is shielded (since NU6.3 it lands in the Ironwood pool);
+   - to a unified address with an Orchard receiver, `bridge-cli mainnet btc-execute-refund --chain zcash` (bridge-cli
+     v0.3.69 or later) builds the **shielded bundle** and the refund is shielded: since NU6.3 it lands in the Ironwood
+     pool, at the same Orchard receiver;
    - to a t-address, near-cli's `execute_refund` with no bundle pays one ordinary output;
    - to an address with neither an Orchard nor a transparent receiver (a Sapling `zs1…` address, for example) the
      connector cannot pay at all, and the tool says so instead of printing commands.
 
-### Why a shielded refund needs the Orchard bundle
+### Why a shielded refund needs a bundle from bridge-cli
 
 The connector refunds by building a Zcash transaction that spends the deposit, and NEAR's MPC network signs its
-transparent input. A transparent output is just a script the contract can write. An Orchard output cannot be written
+transparent input. A transparent output is just a script the contract can write. A shielded output cannot be written
 by a contract: it needs a note encrypted to the recipient and a zero-knowledge proof, and those are made off-chain.
-So for a shielded-only address (no transparent receiver) `bridge-cli` builds the Orchard bundle, proof included, paying
-exactly the deposit minus the stored fee, and passes it to `execute_refund`. The contract checks that the bundle pays
-the request's address's Orchard receiver and that amount, and only then puts the transaction up for signing. Without
-the bundle, `execute_refund` tries a transparent output, and for an address with no transparent receiver it fails.
+So for a shielded-only address (no transparent receiver) `bridge-cli` (v0.3.69 or later; `btc-execute-refund` first
+ships there) builds the bundle, proof included, paying exactly the deposit minus the stored fee, and passes it to
+`execute_refund`. The contract checks that the bundle pays the request's address's Orchard receiver and that amount,
+and only then puts the transaction up for signing. Without the bundle, `execute_refund` tries a transparent output,
+and for an address with no transparent receiver it fails.
+
+Since NU6.3 (28 July 2026, block 3,428,143) no new value may enter the Orchard pool, so the connector builds a v6
+transaction and puts the bundle in its Ironwood slot: the refund lands in the Ironwood pool, at the same Orchard
+receiver, and the address needs no change. The contract's argument is still called `orchard_bundle_bytes`, and the
+bundle uses the Orchard protocol; only the pool is new. The bridge's own shielded withdrawals take this path today.
 On 2026-10-13 we sampled 11 real shielded-funded ZEC deposits to the connector: all 11 name a unified refund address
 with no transparent receiver (7 Orchard-only, 4 Orchard + Sapling). For them a shielded refund is the only refund,
 so this is the normal case, not an edge case.
@@ -156,7 +165,8 @@ The tool runs no server and stores nothing: the web page and the CLI ask public 
 still see who is asking, and the refund itself happens in public. Every report ends with the same list for its own
 deposit, under "What others can see": whether the sender is hidden or public, that the amount and the bridge's deposit
 address are public (the bridge only takes deposits at transparent addresses, so the way in is always visible), the
-NEAR account the deposit is for, whether a refund would stay shielded, and that whoever signs the steps is public.
+NEAR account the deposit is for, where a refund goes (public even when it is shielded), and that whoever signs the
+steps is public.
 
 - **Each lookup** goes to mempool.space (Bitcoin), Blockchair (Zcash), the Omni bridge indexer
   (`mainnet.api.bridge.nearone.org`) and a NEAR RPC provider (FastNEAR, with `near.drpc.org` and
@@ -182,8 +192,12 @@ NEAR account the deposit is for, whether a refund would stay shielded, and that 
   deposit for good. Anyone may sign them, so if that matters, sign from an account that is not tied to your name or
   main wallet, and fund it from somewhere that is not linked to you either: the funding transfer is public too.
 - **So is a transparent refund.** A refund to a Bitcoin address or a Zcash `t1…` address is an ordinary public
-  transfer. A unified address with an Orchard receiver gets a shielded refund, so where the ZEC goes next stays off
-  the transparent chain; the deposit and the refunded amount stay visible.
+  transfer.
+- **A shielded refund is shielded, not hidden.** A unified address with an Orchard receiver gets a shielded refund
+  (since NU6.3 in the Ironwood pool), but its address is public on NEAR, in the deposit message or the refund request.
+  And the connector only accepts a bundle whose output it can recover with an all-zero outgoing viewing key
+  (`BRIDGE_OVK` in the deployed `orchard_policy.rs`), so anyone can recover the refund's recipient and amount from the
+  Zcash transaction too. What stays private is what happens to the ZEC next, while it stays shielded.
 
 ## Quickstart
 
@@ -232,7 +246,7 @@ return the fields that source defines.
 
 ## Limitations
 
-- **The bundle is built by bridge-cli, not by this tool.** The tool prints the command; building an Orchard bundle
+- **The bundle is built by bridge-cli, not by this tool.** The tool prints the command; building the shielded bundle
   needs a Zcash prover (librustzcash's `orchard` crate) that we do not reimplement.
 - **The Zcash refund fee is computed, not read.** No view method returns the default refund fee, so the tool
   computes the contract's ZIP-317 formula (10,000 zatoshis). Once a request exists it uses the `gas_fee` stored on
