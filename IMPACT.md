@@ -2,13 +2,22 @@
 
 Snapshot: **2026-10-13 16:52 UTC**, made with `zec-refund --scan` (this repository). Read-only: public GET requests
 and NEAR view calls only; nothing was signed or sent. Every number below can be rebuilt with the command at the end,
-and every deposit is listed with its transaction hash so anyone can check it on a block explorer.
+which also lists every deposit with its transaction hash, so anyone can check it on a block explorer.
 
 > **Since this snapshot:** both connectors now lock a refund requested for a deposit that named no refund address for
 > 100 years (`unsafe_refund_timelock_sec` 3,153,600,000 s, 14 days before; `btc-connector.bridge.near` since
 > 2026-10-16, `zcash-connector.bridge.near` by 2026-10-17), and the contract applies it to requests already made. The
 > 14-day locks and "refundable now" counts below are as of 2026-10-13. The tool now gives no steps on that lock: see
 > [README, The 100-year lock](README.md#the-100-year-lock-since-mid-october-2026).
+
+> **Re-checked 2026-10-18** (each of the 27 user deposits with `zec-refund <txid>`, and `--scan --since 2026-10-12`):
+> none has been credited, and the only one refunded is the 0.1 BTC executed with this tool on 2026-10-15. The
+> 100-year lock splits the rest. **11 deposits (5.76644379 BTC) named their own refund address**, keep the 2-day lock
+> and can still be refunded by anyone, to that address only. **14 (0.43772040 BTC) named none** and are now locked for
+> 100 years, including the open 0.09544976 BTC request. 1 (0.05 BTC) names a public placeholder address. Since the
+> snapshot, 5 more Bitcoin deposits went uncredited (0.10515878 BTC: 2 with a refund address, 3 without). In all,
+> **31 deposits, 6.35932297 BTC, are stuck; 13 of them (5.81738101 BTC) can be refunded to the addresses their
+> senders named.** No Zcash deposit is stuck beyond the absorbed ones.
 
 ## Headline
 

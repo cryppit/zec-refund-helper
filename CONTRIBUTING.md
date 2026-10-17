@@ -32,6 +32,9 @@ pnpm test:live     # optional: the real public endpoints
 
 ## Pull requests
 
+For commits, branches and review, follow [librustzcash's contribution guidelines](https://github.com/zcash/librustzcash/blob/main/CONTRIBUTING.md),
+the reference style for Zcash projects, adapted to TypeScript where they are Rust-specific.
+
 Keep one change per pull request. Say what it changes for a user with a stuck deposit, and how you tested it,
 including a live run if it touches a client. By contributing you agree that your contribution is licensed under the
 MIT licence of this repository.
