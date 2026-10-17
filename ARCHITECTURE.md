@@ -34,10 +34,12 @@ flowchart TD
   H --> V3[requested: in timelock]
   H --> V4[ready / executed]
   V2 --> R{refund address}
-  R -- in the deposit, or the single<br/>transparent sender --> S1[1. bridge-cli btc-request-refund<br/>2 NEAR, refund address pinned]
-  R -- shielded-funded, none named --> S1b[1. request with --refund-address<br/>your own unified address: a placeholder only]
+  R -- in the deposit --> S1[1. bridge-cli btc-request-refund<br/>2 NEAR, refund address pinned]
+  R -- none named, so the single transparent sender<br/>or your own if shielded-funded --> U{unsafe_refund_timelock_sec}
+  U -- 100 years since 2026-10-16 --> X2[explain, no commands:<br/>a request could never be executed]
+  U -- shorter, as the 14 days before --> S1b[1. request with --refund-address<br/>the sender, or a placeholder for your own]
   R -- several senders, or an address<br/>the connector cannot pay --> X[explain, no commands]
-  S1 --> S2[2. wait 2 or 14 days<br/>DAO may reject a false claim]
+  S1 --> S2[2. wait out the lock: 2 days, or the unsafe lock<br/>DAO may reject a false claim]
   S1b --> S2
   V3 --> S2
   S2 --> P{refundPath of the address}

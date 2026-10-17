@@ -7,6 +7,7 @@ import {
   btcDepositVerdict,
   isCredited,
   isNearAccountId,
+  lockYears,
   receiverOf,
   refundBoard,
   refundFeeFor,
@@ -14,6 +15,7 @@ import {
   refundSteps,
   REQUEST_WINDOW,
   requestWindowSec,
+  unreachableLock,
   zip317Fee,
   ZCASH_REFUND_FEE_ZAT,
   type BtcDepositFacts,
@@ -134,6 +136,49 @@ describe("btcDepositVerdict", () => {
   it("uses the 2-day lock for a request whose deposit named its refund address", () => {
     const request = { refundAddress: SENDER, amountSat: 9_997_900, createdAtSec: 1_787_161_227, executed: false, msgHasRefundAddress: true, gasFeeSat: 5_000 };
     expect(btcDepositVerdict(facts({ msg: withRefundAddress, request }), CONFIG, 1_787_161_227)).toEqual({ state: "requested", refundTo: SENDER, unlocksAtSec: 1_787_161_227 + 172_800 });
+  });
+});
+
+describe("the bridge's 100-year lock (unsafe_refund_timelock_sec, mainnet since 2026-10-16)", () => {
+  // btc-connector.bridge.near went from 1,209,600 s (14 days) to 3,153,600,000 s between blocks 220,226,369 and
+  // 220,227,834; zcash-connector.bridge.near read the same on 2026-10-17 (block 220,386,990). The 2-day lock is unchanged.
+  const LOCKED: RefundConfig = { ...CONFIG, unsafeRefundTimelockSec: 3_153_600_000 };
+  const ZLOCKED: RefundConfig = { ...ZCONFIG, unsafeRefundTimelockSec: 3_153_600_000 };
+
+  it("is a lock nobody can wait out: a deposit that named no refund address gets no paid steps", () => {
+    const v = btcDepositVerdict(facts(), LOCKED, CONFIRMED + DAY);
+    expect(v).toMatchObject({ state: "refundable", refundTo: SENDER, refundToFromDeposit: false, lockSec: 3_153_600_000 });
+    expect(unreachableLock(3_153_600_000)).toBe(true);
+    expect(lockYears(3_153_600_000)).toBe(100);
+    expect(refundSteps(facts(), v, LOCKED)).toEqual([]);
+  });
+
+  it("also for a batch payout, or a Zcash deposit from a shielded pool, whose depositor would name an address on the same lock", () => {
+    const batch = facts({ outputs: 120 });
+    expect(refundSteps(batch, btcDepositVerdict(batch, LOCKED, CONFIRMED + DAY), LOCKED)).toEqual([]);
+    const shielded = facts({ chain: "zcash", amountSat: 5_000_000, senders: [], funding: { kind: "shielded", pools: ["Ironwood"] }, msg: { recipient_id: "intents.near" } });
+    const v = btcDepositVerdict(shielded, ZLOCKED, CONFIRMED + DAY);
+    expect(v).toMatchObject({ state: "refundable", refundTo: null, noTransparentSender: true, lockSec: 3_153_600_000 });
+    expect(refundSteps(shielded, v, ZLOCKED)).toEqual([]);
+  });
+
+  it("a deposit that named its refund address keeps the 2-day lock and every step", () => {
+    const f = facts({ msg: withRefundAddress });
+    const v = btcDepositVerdict(f, LOCKED, CONFIRMED + DAY);
+    expect(v).toMatchObject({ state: "refundable", lockSec: 172_800 });
+    expect(refundSteps(f, v, LOCKED).map((s) => s.title)).toContain("Wait 2 days for the timelock");
+  });
+
+  it("catches a request made before the change too: the contract reads the lock when the refund is executed", () => {
+    const f = facts({ request: { refundAddress: SENDER, amountSat: 9_997_900, createdAtSec: CONFIRMED + HOUR, executed: false, msgHasRefundAddress: false, gasFeeSat: 5_000 } });
+    const v = btcDepositVerdict(f, LOCKED, CONFIRMED + 30 * DAY);
+    expect(v).toEqual({ state: "requested", refundTo: SENDER, unlocksAtSec: CONFIRMED + HOUR + 3_153_600_000 });
+    expect(refundSteps(f, v, LOCKED)).toEqual([]);
+  });
+
+  it("14 days, or a year, are still locks a depositor can wait out", () => {
+    expect(unreachableLock(1_209_600)).toBe(false);
+    expect(unreachableLock(366 * DAY)).toBe(false);
   });
 });
 

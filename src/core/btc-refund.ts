@@ -43,7 +43,10 @@ export interface DepositMsg {
 export interface RefundConfig {
   /** Wait after a request when the deposit named its refund address. */
   refundTimelockSec: number;
-  /** Wait when it did not, and the requester named one (gives the bridge time to reject a false claim). */
+  /**
+   * Wait when it did not, and the requester named one (gives the bridge time to reject a false claim). 14 days until
+   * mid-October 2026, 100 years since: see `unreachableLock`.
+   */
   unsafeRefundTimelockSec: number;
   minDepositSat: number;
   /** The connector's `max_btc_gas_fee`: a withdrawal fee cap (0.01 ZEC on Zcash), and on Bitcoin the refund fee too. */
@@ -289,6 +292,19 @@ export function btcDepositVerdict(f: BtcDepositFacts, c: RefundConfig, nowSec: n
   };
 }
 
+/**
+ * A refund lock nobody can wait out. The connectors lock a refund requested for a deposit that named no refund address
+ * for `unsafe_refund_timelock_sec`: 14 days until mid-October 2026, then 3,153,600,000 s, 100 years
+ * (btc-connector.bridge.near since 2026-10-16, block 220,227,834; zcash-connector.bridge.near by 2026-10-17). The
+ * contract reads the lock from its current config when a refund is executed, and nobody can skip it (Near-One/btc-bridge
+ * `satoshi-bridge/src/refund.rs`, `resolve_execute_refund_timelock`), so it holds earlier requests too. A request on
+ * such a lock costs its deposit and can never be executed, so no steps are given for it.
+ */
+export const UNREACHABLE_LOCK_SEC = 10 * 365 * 86_400;
+export const unreachableLock = (lockSec: number): boolean => lockSec >= UNREACHABLE_LOCK_SEC;
+/** A lock in whole years, for the reports. */
+export const lockYears = (lockSec: number): number => Math.round(lockSec / 31_557_600);
+
 export interface RefundStep {
   title: string;
   command?: string;
@@ -383,7 +399,8 @@ function signInStep(steps: RefundStep[]): RefundStep[] {
  * bridge-cli for the request, which needs the deposit's inclusion proof, and for a shielded Zcash execute, which needs
  * the shielded bundle; near-cli for the rest, printed from the calls a wallet would sign (core/refund-calls.ts). Empty
  * when nothing is to be done, when the refund address cannot be told from the transaction (we never suggest any
- * address but the deposit's own or its single sender), or when the refund would return nothing.
+ * address but the deposit's own or its single sender), when the refund would return nothing, or when its lock is one
+ * nobody can wait out (`unreachableLock`).
  */
 export function refundSteps(f: BtcDepositFacts, v: BtcDepositVerdict, c: RefundConfig): RefundStep[] {
   return signInStep(stepsLeft(f, v, c));
@@ -405,7 +422,7 @@ function stepsLeft(f: BtcDepositFacts, v: BtcDepositVerdict, c: RefundConfig): R
     return execute ? [execute, sign] : [];
   }
   if (v.state === "executed") return [sign];
-  if (v.state !== "refundable" || v.tooSmall) return [];
+  if (v.state !== "refundable" || v.tooSmall || unreachableLock(v.lockSec)) return [];
   const fee = c.requestDepositYocto;
   const request = `Request the refund (${formatNear(fee)} NEAR, not returned)`;
   const requestCmd = `bridge-cli mainnet btc-request-refund --chain ${f.chain} --btc-tx-hash ${f.txid} --vout ${f.vout}`;

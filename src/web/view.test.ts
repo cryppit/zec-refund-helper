@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 
 import { btcDepositVerdict, refundSteps, type BoardRow, type BtcDepositFacts, type RefundConfig } from "../core/btc-refund.js";
-import { boardView, depositView, parseQuery } from "./view.js";
+import { boardNotes, boardView, depositView, parseQuery } from "./view.js";
 
 const CONFIG: RefundConfig = { refundTimelockSec: 172_800, unsafeRefundTimelockSec: 1_209_600, minDepositSat: 2_500, maxGasFeeSat: 5_000, refundFeeSat: 5_000, requestDepositYocto: 2n * 10n ** 24n, executeDepositYocto: 10n ** 24n };
 const ORDER = "f3de655c605a4ca01e000e7961a969687678efaf3bd6c6dff13cea3cb50ab807";
@@ -122,5 +122,37 @@ describe("boardView", () => {
       { state: "Ready for 41 days", tone: "warn", amount: "0.09997900 BTC", refundTo: SENDER, deposit: `${TXID.slice(0, 8)}…@0`, href: `#q=${TXID}:0` },
       { state: "Locked until 2026-10-26", tone: "info", amount: "0.00150000 ZEC", refundTo: "t1VpYecBW4UudbGcy4ufh61eWxQCoFaUrPs", deposit: "abababab…@1", href: `#q=${"ab".repeat(32)}:1` },
     ]);
+    expect(boardNotes(rows)).toEqual(["Ready: the lock has passed and anyone can execute the refund; the coin can only go to the address shown."]);
+  });
+});
+
+describe("on the bridge's 100-year lock (unsafe_refund_timelock_sec since 2026-10-16)", () => {
+  const LOCKED: RefundConfig = { ...CONFIG, unsafeRefundTimelockSec: 3_153_600_000 };
+  const lockedReport = (facts: BtcDepositFacts) => {
+    const verdict = btcDepositVerdict(facts, LOCKED, NOW);
+    return { facts, verdict, steps: refundSteps(facts, verdict, LOCKED), config: LOCKED, orderAccount: ORDER };
+  };
+
+  it("a stuck deposit that named no refund address is not called refundable, and has nothing to sign", () => {
+    const v = depositView(lockedReport({ ...FACTS, request: null }));
+    expect(v.title).toBe("Stuck: a refund would be locked for 100 years");
+    expect(v.tone).toBe("bad");
+    expect(v.steps).toEqual([]);
+    expect(v.stepsIntro).toBeNull();
+    expect(v.headline.join(" ")).toContain("A request would cost 2 NEAR, not returned");
+  });
+
+  it("a request already on that lock says so in its title", () => {
+    const v = depositView(lockedReport(FACTS));
+    expect(v.title).toBe("Refund requested, locked for 100 years");
+    expect(v.tone).toBe("bad");
+  });
+
+  it("the board shows that lock in years, and a note says what it is", () => {
+    const row: BoardRow = { chain: "btc", txid: TXID, vout: 0, amountSat: 9_544_976, refundTo: SENDER, requestedAtSec: 1_791_899_017, unlocksAtSec: 1_791_899_017 + 3_153_600_000, state: "locked", readyForSec: 0 };
+    expect(boardView([row])[0]).toMatchObject({ state: "Locked for 100 years (until 2126-09-19)", tone: "bad" });
+    expect(boardNotes([row])[1]).toBe(
+      "Locked for 100 years: the bridge's lock for a refund whose deposit named no refund address (its unsafe_refund_timelock_sec, read live; 14 days until mid-October 2026); nobody can execute these refunds before it ends.",
+    );
   });
 });

@@ -189,6 +189,44 @@ describe("checkBtcDeposit", () => {
     expect(r.steps[3]?.command).toBe(`bridge-cli mainnet btc-execute-refund --chain zcash --btc-tx-hash ${ZEC_SHIELDED} --vout 0`);
   });
 
+  describe("with the connectors' config read on 2026-10-17 (block 220,387,526): the 100-year lock", () => {
+    /** The 2026-10-13 recordings, but get_config answered with the config recorded on 2026-10-17. */
+    const config100y = (): typeof fetch => {
+      const real = recordedFetch();
+      return (async (input: string | URL | Request, init?: RequestInit) => {
+        const body = String(init?.body);
+        if (String(input) === "https://rpc.mainnet.fastnear.com" && body.includes('"get_config"')) return json(fx(body.includes("zcash-connector") ? "zec-rpc-config-100y.json" : "rpc-config-100y.json"));
+        return real(input, init);
+      }) as typeof fetch;
+    };
+
+    it("both connectors: the unsafe lock is 3,153,600,000 s (100 years), the 2-day lock unchanged", async () => {
+      const btc = await checkBtcDeposit(STUCK, publicBtcRefundClient(config100y()), NOW);
+      const zec = await checkBtcDeposit(ZEC, publicUtxoRefundClients(config100y()), NOW);
+      if ("error" in btc || "error" in zec) throw new Error("check failed");
+      for (const r of [btc, zec]) expect(r.config).toMatchObject({ refundTimelockSec: 172_800, unsafeRefundTimelockSec: 3_153_600_000 });
+    });
+
+    it("the stuck deposit's request of 2026-08-19 (synthetic: that config with the 2026-10-13 recordings) is held too: no steps", async () => {
+      const r = await checkBtcDeposit(STUCK, publicBtcRefundClient(config100y()), NOW);
+      if ("error" in r) throw new Error(r.error);
+      expect(r.verdict).toEqual({ state: "requested", refundTo: "bc1qyp0a54gjhej46zdztq5w0ux2waqg3kacls7q2t", unlocksAtSec: 1_787_161_227 + 3_153_600_000 });
+      expect(r.steps).toEqual([]);
+    });
+
+    it("the uncredited shielded deposit (synthetic, as above) named its own refund address, so it keeps the 2-day lock and every step", async () => {
+      const withConfig = config100y();
+      const notHeld = (async (input: string | URL | Request, init?: RequestInit) => {
+        if (String(input) === "https://rpc.mainnet.fastnear.com" && String(init?.body).includes('"list_utxos"')) return viewResult({ [`${ZEC_SHIELDED}@0`]: null });
+        return withConfig(input, init);
+      }) as typeof fetch;
+      const r = await checkBtcDeposit(ZEC_SHIELDED, publicUtxoRefundClients(notHeld), NOW + 86_400);
+      if ("error" in r) throw new Error(r.error);
+      expect(r.verdict).toMatchObject({ state: "refundable", refundToFromDeposit: true, lockSec: 172_800 });
+      expect(r.steps.map((s) => s.title)).toContain("Wait 2 days for the timelock");
+    });
+  });
+
   it("a real Zcash deposit below the minimum: the bridge verified it into unavailable_utxos and minted nothing, so it is absorbed, not credited", async () => {
     const r = await checkBtcDeposit(ZEC_ABSORBED, publicUtxoRefundClients(recordedFetch()), NOW);
     if ("error" in r) throw new Error(r.error);

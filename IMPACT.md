@@ -4,6 +4,12 @@ Snapshot: **2026-10-13 16:52 UTC**, made with `zec-refund --scan` (this reposito
 and NEAR view calls only; nothing was signed or sent. Every number below can be rebuilt with the command at the end,
 and every deposit is listed with its transaction hash so anyone can check it on a block explorer.
 
+> **Since this snapshot:** both connectors now lock a refund requested for a deposit that named no refund address for
+> 100 years (`unsafe_refund_timelock_sec` 3,153,600,000 s, 14 days before; `btc-connector.bridge.near` since
+> 2026-10-16, `zcash-connector.bridge.near` by 2026-10-17), and the contract applies it to requests already made. The
+> 14-day locks and "refundable now" counts below are as of 2026-10-13. The tool now gives no steps on that lock: see
+> [README, The 100-year lock](README.md#the-100-year-lock-since-mid-october-2026).
+
 ## Headline
 
 | | Bitcoin (`btc-connector.bridge.near`, v0.9.6) | Zcash (`zcash-connector.bridge.near`, v0.9.7-rc.3) |

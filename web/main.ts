@@ -1,7 +1,7 @@
 // The web page: the same deposit check and refund board as the CLI, run in the browser against public sources only.
 // Everything shown is built with textContent, never parsed as HTML.
 import { checkBtcDeposit, checkRefundBoard, publicUtxoRefundClients } from "../src/btc-refund.js";
-import { boardView, depositView, parseQuery, type DepositView } from "../src/web/view.js";
+import { boardNotes, boardView, depositView, parseQuery, type DepositView } from "../src/web/view.js";
 
 function byId<T extends HTMLElement>(id: string): T {
   const e = document.getElementById(id);
@@ -91,14 +91,15 @@ async function showBoard(): Promise<void> {
   boardBtn.disabled = true;
   board.replaceChildren(el("p", { className: "muted", text: "Reading every refund request on both connectors…" }));
   try {
-    const rows = boardView(await checkRefundBoard(publicUtxoRefundClients(), nowSec()));
+    const open = await checkRefundBoard(publicUtxoRefundClients(), nowSec());
+    const rows = boardView(open);
     if (!rows.length) {
       board.replaceChildren(el("p", { text: "No refund requests are open on the Omni Bitcoin and Zcash bridges." }));
       return;
     }
     const body = el("tbody", {}, ...rows.map((r) => el("tr", {}, el("td", { className: r.tone, text: r.state }), el("td", { text: r.amount }), el("td", { className: "mono", text: r.refundTo }), el("td", {}, el("a", { href: r.href, text: r.deposit })))));
     const head = el("thead", {}, el("tr", {}, ...["State", "Amount", "Refund goes to", "Deposit"].map((h) => el("th", { text: h }))));
-    board.replaceChildren(el("table", {}, head, body), el("p", { className: "muted", text: "Ready: the lock has passed and anyone can execute the refund; the coin can only go to the address shown." }));
+    board.replaceChildren(el("table", {}, head, body), ...boardNotes(open).map((text) => el("p", { className: "muted", text })));
   } catch (e) {
     board.replaceChildren(el("p", { className: "err", text: busy(e) ? BUSY : `Could not read the board: ${reason(e)}` }));
   } finally {

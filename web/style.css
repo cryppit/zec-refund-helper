@@ -57,6 +57,7 @@ th { color: var(--mute); font-weight: 600; }
 td.mono { font-family: var(--mono); word-break: break-all; }
 td.warn { color: var(--amber); font-weight: 600; }
 td.ok { color: var(--lime); }
+td.bad { color: var(--red); }
 .video-wrap { margin-top: 48px; padding-top: 30px; border-top: 1px solid var(--line); }
 video { display: block; width: 100%; margin-top: 14px; border-radius: 14px; border: 1px solid var(--line); background: #000; aspect-ratio: 16 / 9; }
 footer { margin-top: 56px; font-size: 14px; }

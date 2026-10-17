@@ -1,9 +1,9 @@
 // What the web page shows for a deposit check and for the refund board. The words are the CLI's own (render-btc-refund),
 // so the page and the terminal never disagree; this file only adds structure and links to public explorers.
 import type { BtcDepositReport } from "../btc-refund.js";
-import { UTXO_CHAINS, type BoardRow, type BtcDepositVerdict, type RefundStep, type UtxoChain } from "../core/btc-refund.js";
+import { lockYears, unreachableLock, UTXO_CHAINS, type BoardRow, type BtcDepositVerdict, type RefundStep, type UtxoChain } from "../core/btc-refund.js";
 import { describeDuration } from "../core/duration.js";
-import { fromWhom, headline, NEAR_CLI_TIMEOUT_NOTE, privacyLines, sourcesLine, stepsIntro } from "../render-btc-refund.js";
+import { BOARD_LOCK_WHY, boardLockYears, fromWhom, headline, NEAR_CLI_TIMEOUT_NOTE, privacyLines, requestLockSec, sourcesLine, stepsIntro } from "../render-btc-refund.js";
 
 type Report = Exclude<BtcDepositReport, { error: string }>;
 export type Tone = "ok" | "warn" | "bad" | "info";
@@ -66,10 +66,21 @@ export function parseQuery(raw: string): { txid: string; vout?: number } | null 
   return m[2] === undefined ? { txid } : { txid, vout: Number(m[2]) };
 }
 
+/** The state's title, or what the bridge's years-long lock makes of it (a refund nobody can execute is not refundable). */
+function titleOf(r: Report): [string, Tone] {
+  const v = r.verdict;
+  if (v.state === "refundable" && !v.tooSmall && unreachableLock(v.lockSec)) return [`Stuck: a refund would be locked for ${lockYears(v.lockSec)} years`, "bad"];
+  if (v.state === "requested") {
+    const lock = requestLockSec(r, v.unlocksAtSec);
+    if (unreachableLock(lock)) return [`Refund requested, locked for ${lockYears(lock)} years`, "bad"];
+  }
+  return TITLE[v.state];
+}
+
 export function depositView(r: Report): DepositView {
   const f = r.facts;
   const { name, unit } = UTXO_CHAINS[f.chain];
-  const [title, tone] = TITLE[r.verdict.state];
+  const [title, tone] = titleOf(r);
   const facts: Fact[] = [
     { label: "Deposit", value: `${f.txid} (output ${f.vout})`, href: txUrl(f.chain, f.txid) },
     { label: "Amount", value: `${coins(f.amountSat)} ${unit}`, href: null },
@@ -104,12 +115,22 @@ export interface BoardRowView {
 }
 
 export function boardView(rows: BoardRow[]): BoardRowView[] {
-  return rows.map((r) => ({
-    state: r.state === "ready" ? `Ready for ${describeDuration(r.readyForSec)}` : r.state === "locked" ? `Locked until ${day(r.unlocksAtSec)}` : "Executed",
-    tone: r.state === "ready" ? "warn" : r.state === "locked" ? "info" : "ok",
-    amount: `${coins(r.amountSat)} ${UTXO_CHAINS[r.chain].unit}`,
-    refundTo: r.refundTo,
-    deposit: `${r.txid.slice(0, 8)}…@${r.vout}`,
-    href: `#q=${r.txid}:${r.vout}`,
-  }));
+  return rows.map((r) => {
+    const lock = r.unlocksAtSec - r.requestedAtSec;
+    const forever = r.state === "locked" && unreachableLock(lock);
+    return {
+      state: r.state === "ready" ? `Ready for ${describeDuration(r.readyForSec)}` : forever ? `Locked for ${lockYears(lock)} years (until ${day(r.unlocksAtSec)})` : r.state === "locked" ? `Locked until ${day(r.unlocksAtSec)}` : "Executed",
+      tone: r.state === "ready" ? "warn" : forever ? "bad" : r.state === "locked" ? "info" : "ok",
+      amount: `${coins(r.amountSat)} ${UTXO_CHAINS[r.chain].unit}`,
+      refundTo: r.refundTo,
+      deposit: `${r.txid.slice(0, 8)}…@${r.vout}`,
+      href: `#q=${r.txid}:${r.vout}`,
+    };
+  });
+}
+
+/** The lines under the board: what Ready means, and the bridge's years-long lock when a row waits it out. */
+export function boardNotes(rows: BoardRow[]): string[] {
+  const years = boardLockYears(rows);
+  return ["Ready: the lock has passed and anyone can execute the refund; the coin can only go to the address shown.", ...(years === null ? [] : [`Locked for ${years} years: ${BOARD_LOCK_WHY}`])];
 }

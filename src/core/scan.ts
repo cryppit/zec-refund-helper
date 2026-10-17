@@ -1,7 +1,7 @@
 // The stuck-money scan, pure part: reading the Omni bridge indexer's transfer pages, why an uncredited deposit is
 // stuck, whether it can be refunded now, and the totals. No I/O and no clock: the current time is passed in.
 
-import { refundPath, UTXO_CHAINS, type BtcDepositFacts, type BtcDepositVerdict, type Funding, type RefundConfig, type UtxoChain } from "./btc-refund.js";
+import { refundPath, unreachableLock, UTXO_CHAINS, type BtcDepositFacts, type BtcDepositVerdict, type Funding, type RefundConfig, type UtxoChain } from "./btc-refund.js";
 import { classifyZcashAddress } from "./zcash-address.js";
 
 /**
@@ -168,7 +168,8 @@ function refundableNow(f: BtcDepositFacts, v: BtcDepositVerdict): RefundableNow 
     case "requested":
       return "locked";
     case "refundable":
-      if (v.tooSmall) return "no";
+      // A request on the bridge's 100-year lock costs its deposit and can never be executed.
+      if (v.tooSmall || unreachableLock(v.lockSec)) return "no";
       if (v.refundTo !== null && refundPath(f.chain, v.refundTo) === "none") return "no";
       return "request";
     default:

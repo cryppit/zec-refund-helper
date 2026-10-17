@@ -2,7 +2,8 @@
 
 import type { BtcDepositReport } from "./btc-refund.js";
 import { describeDuration } from "./core/duration.js";
-import { refundPath, REQUEST_WINDOW, UTXO_CHAINS, type BoardRow, type BtcDepositFacts, type BtcDepositVerdict, type UtxoChain } from "./core/btc-refund.js";
+import { lockYears, refundPath, REQUEST_WINDOW, unreachableLock, UTXO_CHAINS, type BoardRow, type BtcDepositFacts, type BtcDepositVerdict, type UtxoChain } from "./core/btc-refund.js";
+import { formatNear } from "./core/refund-calls.js";
 import { classifyZcashAddress, describeZcashAddress } from "./core/zcash-address.js";
 
 type Report = Exclude<BtcDepositReport, { error: string }>;
@@ -47,6 +48,23 @@ function feeLine(r: Report, amountSat: number, feeSat: number, stored: boolean):
   const { unit, minor } = UTXO_CHAINS[r.facts.chain];
   const why = stored ? "fee stored on the request" : r.facts.chain === "zcash" ? "refund fee (the ZIP-317 minimum the Zcash connector charges)" : "refund fee (the connector's max_btc_gas_fee)";
   return `A refund returns ${coins(amountSat - feeSat)} ${unit}: the deposit minus the ${feeSat}-${minor.replace(/s$/, "")} ${why}.`;
+}
+
+/** A stuck deposit on the bridge's years-long unsafe lock: why there are no steps, and what a request would cost. */
+function unreachableLockLines(r: Report, v: Extract<BtcDepositVerdict, { state: "refundable" }>): string[] {
+  const until = v.requestBySec === null ? "" : ` while the deposit can still be requested (until about ${day(v.requestBySec)})`;
+  return [
+    `The deposit names no refund address, and since mid-October 2026 the bridge locks a refund requested for such a deposit for ${lockYears(v.lockSec)} years (its unsafe_refund_timelock_sec, read live; it was 14 days). A request would cost ${formatNear(r.config.requestDepositYocto)} NEAR, not returned, and nobody could execute the refund before the lock ends, so this tool gives no steps.`,
+    `Only the Omni bridge team can return it. This tool reads the lock live, so if the bridge shortens it${until}, the steps come back here.`,
+  ];
+}
+
+/** How long a request's lock is, from the request itself. */
+export const requestLockSec = (r: Report, unlocksAtSec: number): number => unlocksAtSec - (r.facts.request?.createdAtSec ?? unlocksAtSec);
+
+/** A request already made on that lock. */
+function requestedOnUnreachableLockLine(lockSec: number): string {
+  return `That is the bridge's ${lockYears(lockSec)}-year lock for a refund whose deposit named no refund address (its unsafe_refund_timelock_sec, read live; 14 days until mid-October 2026). The contract reads it when the refund is executed, so it holds this request too: nobody can execute it before then. Only the Omni bridge team can change that.`;
 }
 
 /** Where a requested refund goes, what it returns, and (Zcash) which execute_refund it needs. */
@@ -95,8 +113,10 @@ export function headline(r: Report): string[] {
       return [`REFUNDED  sent back to ${v.refundTo} in ${name} transaction ${v.refundTx}`];
     case "crediting":
       return [`CREDITING  not credited yet, which is normal in the first hours; if nothing changes by ${when(v.stuckAfterSec)}, check again for the refund steps.`];
-    case "requested":
-      return [`REFUND REQUESTED  the lock ends on ${when(v.unlocksAtSec)}; after that anyone can execute it.`, ...requestLines(r, v.refundTo)];
+    case "requested": {
+      const lock = requestLockSec(r, v.unlocksAtSec);
+      return [`REFUND REQUESTED  the lock ends on ${when(v.unlocksAtSec)}; after that anyone can execute it.`, ...(unreachableLock(lock) ? [requestedOnUnreachableLockLine(lock)] : []), ...requestLines(r, v.refundTo)];
+    }
     case "ready":
       return [
         `READY TO REFUND  the refund was requested on ${day(f.request?.createdAtSec ?? v.unlockedAtSec)} and its lock ended on ${day(v.unlockedAtSec)}; nobody has executed it yet.`,
@@ -105,12 +125,14 @@ export function headline(r: Report): string[] {
     case "executed":
       return [`REFUND EXECUTED  waiting for the bridge to sign the ${name} refund to ${v.refundTo} and broadcast it.`];
     case "refundable": {
-      const lines = [`STUCK  confirmed ${day(f.confirmedAtSec ?? 0)} and never credited on NEAR. The bridge's own refund can send it back.`];
+      const locked = unreachableLock(v.lockSec);
+      const lines = [`STUCK  confirmed ${day(f.confirmedAtSec ?? 0)} and never credited on NEAR.${locked ? "" : " The bridge's own refund can send it back."}`];
       if (v.belowMinimum) lines.push(`It is below the bridge's ${r.config.minDepositSat}-${minor.replace(/s$/, "")} minimum deposit, which is likely why it was never credited.`);
       if (v.tooSmall) {
         lines.push(`It is not larger than the refund fee (${v.feeSat} ${minor}), so the contract would refuse a refund request.`);
         return lines;
       }
+      if (locked) return [...lines, ...unreachableLockLines(r, v)];
       if (v.refundTo === null && v.noTransparentSender) {
         lines.push(
           `This deposit came from ${poolName(f)}, so it has no transparent sender, and it names no refund address. You name the address in the request: use one you control, ideally your own unified address with an Orchard receiver so the refund stays shielded (a Sapling-only zs1 address cannot be refunded by this contract). The contract cannot check that the address is yours, so this takes the ${Math.round(v.lockSec / 86_400)}-day lock, during which the bridge's DAO or operator can reject a false claim.`,
@@ -162,15 +184,16 @@ export function renderBtcRefundText(r: Report): string {
   return lines.join("\n");
 }
 
-/** The refund address, for the states that have a refund to talk about. */
+/** The refund address, for the states that have a refund to talk about (not one on a lock nobody can wait out). */
 function refundAddressOf(v: BtcDepositVerdict): string | null {
   switch (v.state) {
     case "requested":
     case "ready":
     case "executed":
     case "refunded":
-    case "refundable":
       return v.refundTo;
+    case "refundable":
+      return unreachableLock(v.lockSec) ? null : v.refundTo;
     default:
       return null;
   }
@@ -227,14 +250,36 @@ export function sourcesLine(r: Report): string {
   return `Sources: ${explorer}; the Omni bridge indexer's deposit message, checked against ${connector}; ${connector} (refund request, timelocks, fees). We never hold keys or sign anything.`;
 }
 
+/** A board row still waiting out a lock nobody can wait out. */
+const onUnreachableLock = (row: BoardRow): boolean => row.state === "locked" && unreachableLock(row.unlocksAtSec - row.requestedAtSec);
+
+/** The years-long lock on the board, if any row waits it out (they all share it: the board reads the live config). */
+export function boardLockYears(rows: BoardRow[]): number | null {
+  const row = rows.find(onUnreachableLock);
+  return row ? lockYears(row.unlocksAtSec - row.requestedAtSec) : null;
+}
+
+/** What that lock is, after "Locked for N years: " (the CLI and the page share it). */
+export const BOARD_LOCK_WHY =
+  "the bridge's lock for a refund whose deposit named no refund address (its unsafe_refund_timelock_sec, read live; 14 days until mid-October 2026); nobody can execute these refunds before it ends.";
+
 /** The stuck-money board: every open refund request, ready ones first. */
 export function renderRefundBoardText(rows: BoardRow[], nowSec: number): string {
   if (rows.length === 0) return "No refund requests are open on the Omni Bitcoin and Zcash bridges.";
   const lines = [`${rows.length} refund request${rows.length === 1 ? "" : "s"} on the Omni Bitcoin and Zcash bridges (${when(nowSec)}):`, ""];
   for (const r of rows) {
-    const state = r.state === "ready" ? `READY ${describeDuration(r.readyForSec)}` : r.state === "locked" ? `locked until ${day(r.unlocksAtSec)}` : "executed";
+    const state =
+      r.state === "ready"
+        ? `READY ${describeDuration(r.readyForSec)}`
+        : onUnreachableLock(r)
+          ? `locked ${lockYears(r.unlocksAtSec - r.requestedAtSec)} years`
+          : r.state === "locked"
+            ? `locked until ${day(r.unlocksAtSec)}`
+            : "executed";
     lines.push(`${state.padEnd(14)} ${(r.amountSat / 1e8).toFixed(8)} ${UTXO_CHAINS[r.chain].unit}  -> ${r.refundTo}  ${r.txid}@${r.vout}`);
   }
   lines.push("", "READY: the lock has passed and anyone can execute the refund; the coin can only go to the address shown.");
+  const years = boardLockYears(rows);
+  if (years !== null) lines.push(`LOCKED ${years} YEARS: ${BOARD_LOCK_WHY}`);
   return lines.join("\n");
 }

@@ -105,6 +105,53 @@ describe("renderBtcRefundText", () => {
   });
 });
 
+describe("renderBtcRefundText on the bridge's 100-year lock (unsafe_refund_timelock_sec since 2026-10-16)", () => {
+  const LOCKED: RefundConfig = { ...CONFIG, unsafeRefundTimelockSec: 3_153_600_000 };
+  const locked = (facts: BtcDepositFacts, config = LOCKED, nowSec = 1_791_900_000) => {
+    const verdict = btcDepositVerdict(facts, config, nowSec);
+    return renderBtcRefundText({ facts, verdict, steps: refundSteps(facts, verdict, config), config, orderAccount: ORDER });
+  };
+
+  it("a stuck deposit that named no refund address: no steps, why, and that a request would cost 2 NEAR for a refund nobody can execute", () => {
+    const text = locked({ ...FACTS, request: null });
+    expect(text).toContain("STUCK  confirmed 2026-08-19 and never credited on NEAR.");
+    expect(text).not.toContain("The bridge's own refund can send it back.");
+    expect(text).toContain(
+      "The deposit names no refund address, and since mid-October 2026 the bridge locks a refund requested for such a deposit for 100 years (its unsafe_refund_timelock_sec, read live; it was 14 days).",
+    );
+    expect(text).toContain("A request would cost 2 NEAR, not returned, and nobody could execute the refund before the lock ends, so this tool gives no steps.");
+    expect(text).toContain("Only the Omni bridge team can return it. This tool reads the lock live, so if the bridge shortens it while the deposit can still be requested (until about 2027-08-20), the steps come back here.");
+    expect(text).not.toContain("What is left");
+    expect(text).not.toContain("--refund-address");
+    expect(text).not.toContain("Public: the refund,");
+  });
+
+  it("a Zcash deposit from a shielded pool that named no refund address: no placeholder request either", () => {
+    const zlocked: RefundConfig = { ...LOCKED, minDepositSat: 100_000, maxGasFeeSat: 1_000_000, refundFeeSat: 10_000 };
+    const shielded: BtcDepositFacts = { ...FACTS, chain: "zcash", amountSat: 5_000_000, depositAddress: "t1RTEogVdgA8cWY8zm1uomj5ThPZnbp8BB4", senders: [], request: null, funding: { kind: "shielded", pools: ["Ironwood"] } };
+    const text = locked(shielded, zlocked);
+    expect(text).toContain("for 100 years");
+    expect(text).not.toContain("<your own unified address");
+    expect(text).not.toContain("What is left");
+  });
+
+  it("a request already made on that lock: when it ends, and that nobody can execute it before then", () => {
+    const text = locked(FACTS);
+    expect(text).toContain("REFUND REQUESTED  the lock ends on 2126-07-26 17:40 UTC; after that anyone can execute it.");
+    expect(text).toContain(
+      "That is the bridge's 100-year lock for a refund whose deposit named no refund address (its unsafe_refund_timelock_sec, read live; 14 days until mid-October 2026). The contract reads it when the refund is executed, so it holds this request too: nobody can execute it before then. Only the Omni bridge team can change that.",
+    );
+    expect(text).not.toContain("What is left");
+  });
+
+  it("a deposit that named its refund address keeps the 2-day lock and its steps", () => {
+    const text = locked({ ...FACTS, request: null, msg: { recipient_id: "intents.near", safe_deposit: { msg: `{"receiver_id":"${ORDER}"}` }, refund_address: SENDER } });
+    expect(text).toContain("The bridge's own refund can send it back.");
+    expect(text).toContain("Wait 2 days for the timelock");
+    expect(text).not.toContain("100 years");
+  });
+});
+
 describe("renderBtcRefundText for Zcash", () => {
   const ZCONFIG: RefundConfig = { ...CONFIG, minDepositSat: 100_000, maxGasFeeSat: 1_000_000, refundFeeSat: 10_000 };
   const UA =
@@ -229,5 +276,16 @@ describe("renderRefundBoardText", () => {
     expect(text).toContain("1 refund request on the Omni Bitcoin and Zcash bridges");
     expect(text).toContain(`READY 41 days  0.09997900 BTC  -> ${SENDER}  ${FACTS.txid}@0`);
     expect(renderRefundBoardText([], 1_791_900_000)).toContain("No refund requests are open");
+  });
+
+  it("marks a request on the bridge's 100-year lock, and says once what that lock is", () => {
+    const row = { chain: "btc" as const, txid: "cd".repeat(32), vout: 0, amountSat: 9_544_976, refundTo: SENDER, requestedAtSec: 1_791_899_017, unlocksAtSec: 1_791_899_017 + 3_153_600_000, state: "locked" as const, readyForSec: 0 };
+    const text = renderRefundBoardText([row, { ...row, vout: 1 }], 1_791_900_000);
+    expect(text).toContain(`locked 100 years 0.09544976 BTC  -> ${SENDER}  ${"cd".repeat(32)}@0`);
+    expect(text.match(/LOCKED 100 YEARS: /g)).toHaveLength(1);
+    expect(text).toContain(
+      "LOCKED 100 YEARS: the bridge's lock for a refund whose deposit named no refund address (its unsafe_refund_timelock_sec, read live; 14 days until mid-October 2026); nobody can execute these refunds before it ends.",
+    );
+    expect(renderRefundBoardText([{ ...row, unlocksAtSec: 1_791_899_017 + 1_209_600 }], 1_791_900_000)).not.toContain("LOCKED");
   });
 });

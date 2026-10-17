@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { BtcDepositFacts, BtcDepositVerdict, RefundConfig } from "./btc-refund.js";
+import { btcDepositVerdict, type BtcDepositFacts, type BtcDepositVerdict, type RefundConfig } from "./btc-refund.js";
 import { ageBuckets, cursorAt, isCreditedStatus, cursorTime, parseTransfersPage, refundAddressKind, scanRow, segments, stuckCause, summarize, type ScanRow } from "./scan.js";
 
 const CFG: RefundConfig = {
@@ -164,6 +164,16 @@ describe("scanRow", () => {
 
   it("a credited deposit is no row", () => {
     expect(scanRow(facts({ bridgeHolds: true }), { state: "credited", orderAccount: "x" }, CFG, NOW, { recipientExists: true, source: "indexer", indexerStatus: "Initialised" })).toBeNull();
+  });
+
+  it("on the bridge's 100-year lock (since 2026-10-16), a deposit that named no refund address is not refundable now; one that named it still is", () => {
+    const LOCKED: RefundConfig = { ...CFG, unsafeRefundTimelockSec: 3_153_600_000 };
+    const extra = { recipientExists: true, source: "indexer" as const, indexerStatus: "Initialised" };
+    const none = facts();
+    expect(btcDepositVerdict(none, LOCKED, NOW)).toMatchObject({ state: "refundable", refundToFromDeposit: false, lockSec: 3_153_600_000 });
+    expect(scanRow(none, btcDepositVerdict(none, LOCKED, NOW), LOCKED, NOW, extra)?.refundableNow).toBe("no");
+    const named = facts({ msg: { recipient_id: "intents.near", refund_address: "t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1" } });
+    expect(scanRow(named, btcDepositVerdict(named, LOCKED, NOW), LOCKED, NOW, extra)?.refundableNow).toBe("request");
   });
 });
 

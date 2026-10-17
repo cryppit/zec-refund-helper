@@ -55,7 +55,8 @@ Given a 64-hex transaction hash, it:
 6. Classifies the refund address (ZIP-316 parsing, no dependencies: Bech32m, F4Jumble with BLAKE2b, the receiver
    typecodes; tested against the official zcash-test-vectors): a transparent t-address, a TEX address, a unified
    address and its receivers (Orchard, Sapling, transparent), or a Sapling or Sprout z-address.
-7. For a stuck deposit, prints the commands left to run, with live fees and timelocks: first the one line that lets
+7. For a stuck deposit, prints the commands left to run, with live fees and timelocks (none on the bridge's
+   [100-year lock](#the-100-year-lock-since-mid-october-2026)): first the one line that lets
    near-cli sign as your NEAR account (`near account import-account using-web-wallet network-config mainnet`), then
    **request** (`bridge-cli … btc-request-refund`, which builds the deposit's inclusion proof), **wait for the lock**,
    **execute**, and **sign** (`sign_btc_transaction` with near-cli, or `bridge-cli … near-sign-btc-transaction`:
@@ -97,11 +98,13 @@ at all: the ZEC came out of the Ironwood pool straight to the bridge deposit add
 transparent sender. The tool says so and:
 
 - if the deposit message names a refund address (the real ones we found all do, a unified address), uses that one;
-- if it does not, it explains that the depositor names their own address in the request, ideally their own unified
-  address with an Orchard receiver so the refund stays shielded. It prints the request with a placeholder
-  (`--refund-address <your own unified address …>`), never an address of its own choosing. Nobody can prove from the
-  chain that a named address belongs to the depositor, which is why this path has the 14-day lock and the bridge's DAO
-  or operator can reject a false claim during it.
+- if it does not, the depositor would have to name their own address in the request, and since mid-October 2026 the
+  bridge locks such a request for 100 years ([below](#the-100-year-lock-since-mid-october-2026)), so the tool gives
+  no steps. Under a shorter lock (it was 14 days, and the tool reads it live) it explains that the depositor names
+  their own address, ideally their own unified address with an Orchard receiver so the refund stays shielded, and
+  prints the request with a placeholder (`--refund-address <your own unified address …>`), never an address of its
+  own choosing. Nobody can prove from the chain that a named address belongs to the depositor, which is why this path
+  has the longer lock and the bridge's DAO or operator can reject a false claim during it.
 
 `zec-refund --board` lists every refund request on both connectors, ready ones first with how long nobody has executed
 them, then locked ones, then executed ones.
@@ -145,6 +148,23 @@ newest blocks. `zcash-client.bridge.near` keeps 103,680 Zcash blocks: 90 days at
 Bitcoin's keeps 52,704 blocks, about a year. The tool prints the date to request by, and after it the verdict
 `too_old` with no commands: the request would fail, and the contract takes the 2 NEAR before it checks the proof.
 
+### The 100-year lock (since mid-October 2026)
+
+A refund for a deposit that names no refund address waits out the connector's `unsafe_refund_timelock_sec`. It was
+1,209,600 seconds (14 days). It is now 3,153,600,000 seconds, 100 years: on `btc-connector.bridge.near` since
+2026-10-16 (between blocks 220,226,369 and 220,227,834), and on `zcash-connector.bridge.near` by 2026-10-17
+(`get_config` at block 220,386,990). The 2-day lock for a deposit that named its refund address is unchanged. The
+contract reads the lock from its current config when a refund is executed, and nobody can skip it
+(`resolve_execute_refund_timelock` in Near-One/btc-bridge, `satoshi-bridge/src/refund.rs`), so it also holds requests
+made before the change.
+
+A request on that lock costs 2 NEAR and cannot be executed for 100 years. So for a stuck deposit that names no
+refund address (a single transparent sender, a batch payout, or a deposit from a shielded pool) the tool gives no
+steps: it says why, and that only the Omni bridge team can return the coin. A request already made on that lock shows
+its end date and the same reason, `--board` marks it, and `--scan` does not count it as refundable now. The tool
+reads the lock live, so if the bridge shortens it, the steps come back. A deposit that names its refund address
+keeps every step.
+
 ## Custody and trust model
 
 - **Keyless.** It only reads public APIs and view methods. There is no key, account, login or API key anywhere in the code.
@@ -154,8 +174,9 @@ Bitcoin's keeps 52,704 blocks, about a year. The tool prints the date to request
   itself, or, if the deposit names none, the single transparent address that funded it. If several addresses
   funded it, it suggests nothing. If it was funded from a shielded pool with no refund address, it explains how the
   depositor names their own address and prints a placeholder, never an address. The contract enforces the deposit's own `refund_address` when one is set. When none
-  is set, the requester names the address, the longer 14-day lock applies, and the bridge's DAO or operator can reject a
-  false claim during that lock. Once requested, the refund can only go to the address in the request.
+  is set, the requester names the address and the longer lock applies, during which the bridge's DAO or operator can
+  reject a false claim; since mid-October 2026 that lock is 100 years, so the tool gives no steps for such a deposit.
+  Once requested, the refund can only go to the address in the request.
 - **The user signs.** Every step is a NEAR transaction the user signs with their own NEAR account, through
   `bridge-cli` or `near` CLI. Anyone may pay for these calls; that changes nothing about where the coin goes.
 
