@@ -280,19 +280,29 @@ export interface UnifiedItem {
 
 const UA_HRP: Record<string, "main" | "test"> = { u: "main", utest: "test" };
 const RECEIVER_LEN: Record<number, number> = { 0: 20, 1: 20, 2: 43, 3: 43 };
+// Typecodes and lengths are CompactSize: in its shortest form, and at most Bitcoin's MAX_SIZE (as librustzcash reads them).
+const MAX_COMPACT_SIZE = 0x02000000;
+// ZIP-316's MUST-understand metadata typecodes; a Revision 0 (`u`) address must not hold any.
+const MUST_UNDERSTAND = { min: 0xe0, max: 0xfc };
 
-function compactSize(b: Uint8Array, at: number): { value: number; next: number } | null {
+function compactSize(b: Uint8Array, at: number): { value: number; next: number } | { error: string } {
   const first = b[at];
-  if (first === undefined) return null;
+  if (first === undefined) return { error: "truncated unified address item" };
   if (first < 0xfd) return { value: first, next: at + 1 };
   const width = first === 0xfd ? 2 : first === 0xfe ? 4 : 8;
-  if (at + 1 + width > b.length) return null;
+  if (at + 1 + width > b.length) return { error: "truncated unified address item" };
   let v = 0;
   for (let i = width - 1; i >= 0; i--) v = v * 256 + (b[at + 1 + i] ?? 0);
+  const shortest = first === 0xfd ? 0xfd : first === 0xfe ? 0x10000 : 2 ** 32;
+  if (v < shortest) return { error: "non-canonical CompactSize in a unified address item" };
+  if (v > MAX_COMPACT_SIZE) return { error: "CompactSize above 0x02000000 in a unified address item" };
   return { value: v, next: at + 1 + width };
 }
 
-/** ZIP-316 decoding: Bech32m, F4Jumble⁻¹, the HRP padding check, then the typecode-length-value items. */
+/**
+ * ZIP-316 Revision 0 decoding: Bech32m, F4Jumble⁻¹, the HRP padding check, then the typecode-length-value items. The
+ * address must hold a Sapling or Orchard receiver and no MUST-understand metadata; other unknown items are ignored.
+ */
 export function decodeUnifiedAddress(s: string): { network: "main" | "test"; items: UnifiedItem[] } | { error: string } {
   const d = bech32Decode(s);
   if ("error" in d) return { error: d.error === "bad checksum" ? "bad Bech32m checksum" : d.error };
@@ -309,18 +319,25 @@ export function decodeUnifiedAddress(s: string): { network: "main" | "test"; ite
   const items: UnifiedItem[] = [];
   for (let at = 0; at < body.length; ) {
     const t = compactSize(body, at);
-    const l = t && compactSize(body, t.next);
-    if (!t || !l || l.next + l.value > body.length) return { error: "truncated unified address item" };
+    if ("error" in t) return t;
+    const l = compactSize(body, t.next);
+    if ("error" in l) return l;
+    if (l.next + l.value > body.length) return { error: "truncated unified address item" };
     const last = items[items.length - 1];
     if (last && last.typecode >= t.value) return { error: "unified address items out of order" };
     const want = RECEIVER_LEN[t.value];
     if (want !== undefined && want !== l.value) return { error: `wrong length for typecode ${t.value}` };
+    if (t.value >= MUST_UNDERSTAND.min && t.value <= MUST_UNDERSTAND.max) {
+      return { error: `a Revision 0 unified address cannot hold MUST-understand metadata (typecode 0x${t.value.toString(16)})` };
+    }
     items.push({ typecode: t.value, data: body.slice(l.next, l.next + l.value) });
     at = l.next + l.value;
   }
   const codes = items.map((i) => i.typecode);
   if (codes.includes(0) && codes.includes(1)) return { error: "a unified address cannot hold both P2PKH and P2SH" };
-  if (!items.some((i) => i.typecode !== 0 && i.typecode !== 1)) return { error: "a unified address needs a non-transparent item" };
+  // ZIP-316: "at least one shielded Item (currently Typecodes 0x02 and 0x03)". An unknown item does not count
+  // (librustzcash#468 proposes the same for zcash_address).
+  if (!codes.includes(2) && !codes.includes(3)) return { error: "a unified address needs a Sapling or Orchard receiver" };
   return { network, items };
 }
 
@@ -338,7 +355,11 @@ export interface ZcashAddressInfo {
   /** Which refund the Zcash connector can build to this address: a transparent output, or an Orchard bundle. */
   refund: { transparent: boolean; shielded: boolean };
   error?: string;
+  /** Set for a Zcash address this helper recognizes but does not read (a Revision 2 unified address): the reason. */
+  unsupported?: string;
 }
+
+const R2_UNSUPPORTED = "a Revision 2 unified address (zu… or tu…; ZIP-316 Revision 2 is still a draft): this helper does not read these yet";
 
 const T_PREFIX: Record<string, { kind: "p2pkh" | "p2sh" | "sprout"; network: "main" | "test" }> = {
   "1cb8": { kind: "p2pkh", network: "main" },
@@ -355,6 +376,9 @@ export function classifyZcashAddress(raw: string): ZcashAddressInfo {
   const address = raw.trim();
   const base = { address, receivers: { ...NONE, unknown: [] as number[] } };
   const lower = address.toLowerCase();
+
+  const r2 = /^(?:zu|tu)(test)?1/.exec(lower);
+  if (r2) return { ...base, kind: "unified", network: r2[1] ? "test" : "main", valid: false, refund: NO_REFUND, unsupported: R2_UNSUPPORTED };
 
   if (lower.startsWith("u1") || lower.startsWith("utest1")) {
     const ua = decodeUnifiedAddress(address);
@@ -390,6 +414,7 @@ export function classifyZcashAddress(raw: string): ZcashAddressInfo {
 
 /** A short plain-English name for the address and its receivers. */
 export function describeZcashAddress(a: ZcashAddressInfo): string {
+  if (a.unsupported) return a.unsupported;
   if (!a.valid) return a.kind === "unknown" ? "not a Zcash address" : `an invalid ${a.kind === "unified" ? "unified" : a.kind} address (${a.error ?? "checksum"})`;
   switch (a.kind) {
     case "p2pkh":

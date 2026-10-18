@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { blake2b, classifyZcashAddress, decodeUnifiedAddress, f4jumble, f4jumbleInv, sha256 } from "./zcash-address.js";
+import { blake2b, classifyZcashAddress, decodeUnifiedAddress, describeZcashAddress, f4jumble, f4jumbleInv, sha256 } from "./zcash-address.js";
 
 interface Vectors {
   unified: { p2pkh: string | null; p2sh: string | null; sapling: string | null; orchard: string | null; unknown_typecode: number | null; unknown: string | null; address: string }[];
@@ -87,7 +87,29 @@ describe("decodeUnifiedAddress (ZIP-316 test vectors)", () => {
     // MUST contain a shielded item (ZIP-316), so this is invalid whatever its length.
     const transparentOnly = "u148mzm4a9fwtn9jf2u2sq8zpzhgkdkj7k05fk3jh2vtzdxjzsue9nq3pap6k5jka40wl";
     expect(transparentOnly).toHaveLength(69);
-    expect(decodeUnifiedAddress(transparentOnly)).toEqual({ error: "a unified address needs a non-transparent item" });
+    expect(decodeUnifiedAddress(transparentOnly)).toEqual({ error: "a unified address needs a Sapling or Orchard receiver" });
+  });
+
+  // Built by the same independent Python code around the Orchard receiver of official vector 27: the cases of
+  // defuse-frontend PR #999 (station repo, ops/pit/evidence/2026-10-18-oss/pr-749/cases-v2.txt).
+  it.each([
+    ["a MUST-understand metadata item (0xE0), which Revision 0 forbids", "u1hlfmws84g4h2fm56vfwtay0akyfesc6nur2ylhccpgqgjdylxmqvqmm57xdugy4sp70fw5mnmfhmrdt2ju8qur0qw0l282240exekagxkrtq02z7x5", "a Revision 0 unified address cannot hold MUST-understand metadata (typecode 0xe0)"],
+    ["a typecode in non-canonical CompactSize form", "u1y5eet2q707fyylyujr36ldumsdjrg09x4m37250mdfpnz8m72x9exuc7ekeytkak6umm6udwpy2j94n4zprkkrsf2ah826ce3948z3zmyrk", "non-canonical CompactSize in a unified address item"],
+    ["a typecode above 0x02000000", "u1qxnk2cz4vxf852g36txc2hcf5ha7vah0dz7uv3f7233wtfhgrj9jkx3gan7erjy9vf3r5kv82dltwn4zmk48dm97ggcuqxk2jua33ffne44q4k93uu", "CompactSize above 0x02000000 in a unified address item"],
+  ])("rejects %s", (_name, address, error) => {
+    expect(decodeUnifiedAddress(address)).toEqual({ error });
+  });
+
+  it("rejects P2PKH plus an unknown item: a Revision 0 address needs a Sapling or Orchard receiver (ZIP-316; librustzcash#468)", () => {
+    // Official vector 18 without its Orchard receiver, re-encoded: P2PKH plus one item of experimental typecode 0xFFFC.
+    const p2pkhAndUnknown = "u15hxr8my6dyqwcryu3rt369c3r8alp334dffxxyxn7cqquwl69y4xrp8r4xuwmzd3qh7w5cysra7xpr99latlet7zc9jkh7vsu7gjafna62uxw3mlvahhx4nq35p0s0kqm0d3tr70ck0cjt7mp0cg7m7u4pg94u8vcapud5v6mlmkrvj0fpze5duq48khjgew9cdwmfzt7f045runhpjw32fglj05959fdf2upf03gf2sq33m79f0kaltf6x0dat5ukallp23h5u6xjnh0gsf0un32khyvaad2ehypw2mp9sse9p72rm0nhmfra9z2d00vq78kwsd87apxkjuvxwg76gcq5prn";
+    expect(decodeUnifiedAddress(p2pkhAndUnknown)).toEqual({ error: "a unified address needs a Sapling or Orchard receiver" });
+  });
+
+  it("ignores a metadata item outside the MUST-understand range (0xC0)", () => {
+    const ua = decodeUnifiedAddress("u1fm32dnaewyvygn4djt26u3nadycxmn8999x4m8l8p6983laejlk2r3w48hvwrkp20jcz60ndygd6amvqak099rxe25tfp8u8f0888jqwlked7");
+    if ("error" in ua) throw new Error(ua.error);
+    expect(ua.items.map((i) => i.typecode)).toEqual([3, 0xc0]);
   });
 });
 
@@ -125,6 +147,14 @@ describe("classifyZcashAddress", () => {
     const sapling = vectors.unified.find((v) => v.sapling)?.sapling ?? "";
     const a = classifyZcashAddress(encodeBech32ForTest("zs", bytes(sapling)));
     expect(a).toMatchObject({ kind: "sapling", network: "main", valid: true, refund: { transparent: false, shielded: false } });
+  });
+
+  it("Revision 2 unified addresses (zu…, tu…; official zcash-test-vectors unified_address_r2.json 0 and 12): named as such, not read", () => {
+    for (const address of ["zu1wpmyzjrdtsw2n0kgku0pr6raf7jhwe70e45ucfcruk9qrxv59fxegvrlwmqs8uydq57re5rm79eth5hu5hzcqetl39nphtyp74qu5prrpwy8kzqlxagwz24f2c3z0939mwt3cngyfrx5nyk270q4eaj5jqdqepadhq4n6kmf0cdca58t", "tu1fm5xassnx4us9jm60l0ntfcyy6awx7xy02nf2yfkq24uungm3pt0uuvtkjemrav8xvvzm6c4j3clpqwlx5qscvt4lyagng0jqxgu9jjd2cf42pwqnj7uwzua7swgjzfm4swmauuz0lu42nrv7vkx9kjkgjluvddsya20tsat5ejujgg66ulw8r0pdhh5vzhjy2yelhrh2wcsx06kf4z"]) {
+      const a = classifyZcashAddress(address);
+      expect(a).toMatchObject({ kind: "unified", network: "main", valid: false, refund: { transparent: false, shielded: false } });
+      expect(describeZcashAddress(a)).toBe("a Revision 2 unified address (zu… or tu…; ZIP-316 Revision 2 is still a draft): this helper does not read these yet");
+    }
   });
 
   it("a mistyped t-address fails its Base58Check checksum", () => {
