@@ -41,6 +41,21 @@ describe("F4Jumble (ZIP-316 test vectors)", () => {
     expect(hex(f4jumble(bytes(v.normal)))).toBe(v.jumbled);
     expect(hex(f4jumbleInv(bytes(v.jumbled)))).toBe(v.normal);
   });
+
+  // The official vectors start at 48 bytes, but ZIP-316 and librustzcash now accept 38 (`VALID_LENGTH = 38..=4194368`:
+  // a transparent-only Revision 2 `tu` address). This vector comes from an independent Python F4Jumble written from the
+  // ZIP-316 text, which reproduces every official vector above.
+  it("38 bytes, the current minimum: jumbles and unjumbles", () => {
+    const normal = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425";
+    const jumbled = "a2337d4890be24f7a6b5d8687c56676503f4a0e8fb025907e2229b47e25ecc12e76995a4ca2c";
+    expect(hex(f4jumble(bytes(normal)))).toBe(jumbled);
+    expect(hex(f4jumbleInv(bytes(jumbled)))).toBe(normal);
+  });
+
+  it("rejects an input shorter than 38 bytes", () => {
+    expect(() => f4jumble(new Uint8Array(37))).toThrow("F4Jumble input must be 38 to 4194368 bytes");
+    expect(() => f4jumbleInv(new Uint8Array(37))).toThrow("F4Jumble input must be 38 to 4194368 bytes");
+  });
 });
 
 describe("decodeUnifiedAddress (ZIP-316 test vectors)", () => {
@@ -64,6 +79,15 @@ describe("decodeUnifiedAddress (ZIP-316 test vectors)", () => {
     const bad = good.slice(0, -1) + (good.endsWith("q") ? "p" : "q");
     expect(decodeUnifiedAddress(bad)).toEqual({ error: "bad Bech32m checksum" });
     expect("error" in decodeUnifiedAddress("t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1")).toBe(true);
+  });
+
+  it("rejects a 69-character u1 address for holding only a transparent receiver, not for its length", () => {
+    // 38 bytes before Bech32m: one P2PKH item (typecode 0, 20 bytes) plus the HRP padding, jumbled and encoded by an
+    // independent Python implementation that re-encodes every official vector byte for byte. A Revision 0 (`u`) address
+    // MUST contain a shielded item (ZIP-316), so this is invalid whatever its length.
+    const transparentOnly = "u148mzm4a9fwtn9jf2u2sq8zpzhgkdkj7k05fk3jh2vtzdxjzsue9nq3pap6k5jka40wl";
+    expect(transparentOnly).toHaveLength(69);
+    expect(decodeUnifiedAddress(transparentOnly)).toEqual({ error: "a unified address needs a non-transparent item" });
   });
 });
 

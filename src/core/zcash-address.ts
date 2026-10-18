@@ -165,8 +165,9 @@ function f4G(i: number, u: Uint8Array, lenR: number): Uint8Array {
   }
   return out;
 }
+// ZIP-316 (and librustzcash's VALID_LENGTH) take 38..4194368 bytes; 38 fits a transparent-only Revision 2 `tu` address.
 const f4Split = (m: Uint8Array): number => {
-  if (m.length < 48 || m.length > 4_194_368) throw new Error("F4Jumble input must be 48 to 4194368 bytes");
+  if (m.length < 38 || m.length > 4_194_368) throw new Error("F4Jumble input must be 38 to 4194368 bytes");
   return Math.min(64, Math.floor(m.length / 2));
 };
 
@@ -298,7 +299,7 @@ export function decodeUnifiedAddress(s: string): { network: "main" | "test"; ite
   const network = UA_HRP[d.hrp];
   if (!network) return { error: `not a unified address (HRP ${d.hrp})` };
   if (d.variant !== "bech32m") return { error: "a unified address uses Bech32m" };
-  if (d.bytes.length < 48) return { error: "too short for a unified address" };
+  if (d.bytes.length < 38) return { error: "too short for a unified address" };
   const raw = f4jumbleInv(d.bytes);
   const pad = new Uint8Array(16);
   pad.set(new TextEncoder().encode(d.hrp));
