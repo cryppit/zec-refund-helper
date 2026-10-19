@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/banner-zec-refund-helper-dark.svg">
+  <img alt="Zcash Refund Helper: find a stuck ZEC or BTC deposit in the NEAR Omni bridge. Keyless, read-only." src="docs/brand/banner-zec-refund-helper-light.svg" width="100%">
+</picture>
+
 # zec-refund-helper
 
 Find a Zcash deposit that is stuck in the NEAR Omni bridge from its transaction hash, see where the ZEC is and who can
