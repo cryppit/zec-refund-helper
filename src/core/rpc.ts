@@ -6,11 +6,11 @@
 // replied. The clock, sleep, randomness and fetch are injected so tests are deterministic.
 
 /** Mainnet providers that answer `query` view calls and `block`, with CORS open to browsers (checked 2026-10-13).
- *  Dropped: near.lava.build (410, discontinued), 1rpc.io/near (no `query` method). */
+ *  Dropped: near.lava.build (410, discontinued), 1rpc.io/near (no `query` method), dRPC (its terms, §1.3,
+ *  rule out our use). */
 export const NEAR_RPC_PROVIDERS: readonly string[] = [
   "https://rpc.mainnet.fastnear.com",
   "https://free.rpc.fastnear.com",
-  "https://near.drpc.org",
   "https://rpc.mainnet.near.org",
 ];
 

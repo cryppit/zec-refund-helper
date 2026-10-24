@@ -543,7 +543,6 @@ export const SCAN_INTERVALS_MS: Record<string, number> = {
   "api.blockchair.com": 2_100,
   "rpc.mainnet.fastnear.com": 250,
   "free.rpc.fastnear.com": 250,
-  "near.drpc.org": 250,
   "rpc.mainnet.near.org": 2_000,
   "api.coingecko.com": 1_000,
 };

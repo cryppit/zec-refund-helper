@@ -46,8 +46,8 @@ Given a 64-hex transaction hash, it:
    transaction as 0 inputs, 0 fee and a 0 shielded delta.
 2. For each output, asks the Omni bridge indexer for the deposit message behind that address, then checks the
    indexer's answer against the connector contract itself (`get_user_deposit_address`), so it does not rely on the indexer alone.
-3. Reads from the connector over NEAR RPC (FastNEAR first; when it is busy or refuses, free.rpc.fastnear.com,
-   near.drpc.org and rpc.mainnet.near.org in turn): whether the bridge holds the coin (`list_utxos`: credited) or
+3. Reads from the connector over NEAR RPC (FastNEAR first; when it is busy or refuses, free.rpc.fastnear.com
+   and rpc.mainnet.near.org in turn): whether the bridge holds the coin (`list_utxos`: credited) or
    absorbed it (`list_unavailable_utxos`: verified below the minimum, nothing minted), any refund request (`get_refund_requests_paged`, with the fee stored on it), and the live
    config: timelocks, minimum deposit and the NEAR deposits that `request_refund` and `execute_refund` need. The
    Zcash refund fee is the contract's own ZIP-317 minimum (10,000 zatoshis for a one-input refund, transparent or
@@ -195,7 +195,7 @@ NEAR account the deposit is for, where a refund goes (public even when it is shi
 steps is public.
 
 - **Each lookup** goes to mempool.space (Bitcoin), Blockchair (Zcash), the Omni bridge indexer
-  (`mainnet.api.bridge.nearone.org`) and a NEAR RPC provider (FastNEAR, with `near.drpc.org` and
+  (`mainnet.api.bridge.nearone.org`) and a NEAR RPC provider (FastNEAR, with `free.rpc.fastnear.com` and
   `rpc.mainnet.near.org` as fallbacks). Each one sees your IP address next to the hash or account you ask about.
   `--scan` also asks CoinGecko for prices. GitHub serves the page but never sees the hash: browsers keep the part of a
   `#q=` link after the `#` to themselves.

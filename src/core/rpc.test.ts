@@ -39,9 +39,10 @@ describe("nearRpc", () => {
     expect(NEAR_RPC_PROVIDERS).toEqual([
       "https://rpc.mainnet.fastnear.com",
       "https://free.rpc.fastnear.com",
-      "https://near.drpc.org",
       "https://rpc.mainnet.near.org",
     ]);
+    // dRPC: its terms (§1.3) rule out our use.
+    expect(NEAR_RPC_PROVIDERS.some((p) => p.includes("drpc"))).toBe(false);
   });
 
   it("retries a 429 on the same provider and returns the answer", async () => {
