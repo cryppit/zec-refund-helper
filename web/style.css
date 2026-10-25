@@ -17,7 +17,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; background: radial-gradient(1100px 600px at 80% -10%, rgba(42, 59, 214, 0.28), transparent 60%), var(--deep); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 1240px; margin: 0 auto; padding: 24px 20px 64px; position: relative; z-index: 0; }
-#out, .board-wrap, .video-wrap, footer { max-width: 980px; margin-left: auto; margin-right: auto; }
+#out, footer { max-width: 980px; margin-left: auto; margin-right: auto; }
 a { color: var(--lime); }
 h1 { font-size: clamp(40px, 7vw, 72px); line-height: 1; letter-spacing: -0.03em; margin: 10px 0 16px; }
 h2 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.01em; }
@@ -54,7 +54,9 @@ dd { margin: 0; font-family: var(--mono); font-size: 14px; word-break: break-all
 pre { flex: 1; margin: 0; background: #050822; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font: 13px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; }
 .copy { min-height: 36px; padding: 0 12px; font-size: 13px; }
 .sources { font-size: 13px; color: var(--mute); margin-top: 18px; }
-.board-wrap { margin-top: 48px; padding-top: 30px; border-top: 1px solid var(--line); }
+.board-wrap { margin-top: 24px; padding: 24px; border-radius: 20px; background: var(--glass); border: 1px solid var(--line); }
+.board-wrap h2 { font-size: 24px; margin: 0 0 4px; }
+#board-btn { margin-top: 14px; }
 table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
 th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--mute); font-weight: 600; }
@@ -62,7 +64,11 @@ td.mono { font-family: var(--mono); word-break: break-all; }
 td.warn { color: var(--amber); font-weight: 600; }
 td.ok { color: var(--lime); }
 td.bad { color: var(--red); }
-.video-wrap { margin-top: 48px; padding-top: 30px; border-top: 1px solid var(--line); }
+.video-wrap { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr); gap: 28px; align-items: center; margin-top: 24px; padding: 24px; border-radius: 20px; background: var(--glass); border: 1px solid var(--line); }
+@media (max-width: 860px) { .video-wrap { grid-template-columns: minmax(0, 1fr); } }
+.video-copy h2 { font-size: 24px; margin: 6px 0 8px; }
+.video-frame { position: relative; border-radius: 16px; padding: 1px; background: linear-gradient(130deg, rgba(221, 242, 74, 0.6), transparent 40%, transparent 65%, rgba(42, 59, 214, 0.8)); box-shadow: 0 30px 80px -40px rgba(42, 59, 214, 0.8); }
+.video-frame video { margin: 0; border: 0; border-radius: 15px; }
 video { display: block; width: 100%; margin-top: 14px; border-radius: 14px; border: 1px solid var(--line); background: #000; aspect-ratio: 16 / 9; }
 footer { margin-top: 56px; font-size: 14px; }
 @media (max-width: 600px) {
