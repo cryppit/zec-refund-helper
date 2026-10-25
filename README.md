@@ -13,10 +13,11 @@ Keyless and read-only: it never asks for, sees or holds a key, and it never sign
 Live demo: https://cryppit.github.io/zec-refund-helper/ (this repository's own web page, `web/`: the same checks, run in
 your browser against public sources only).
 
-Demo video (1:59, with the 15 October refund on mainnet): https://cryppit.github.io/zec-refund-helper/demo.mp4 (also
-attached to the [v0.1.0 release](https://github.com/cryppit/zec-refund-helper/releases/tag/v0.1.0)). Updated on 16
-October: a shielded refund now lands in the Ironwood pool since NU6.3, and the video says so
-([why](#why-a-shielded-refund-needs-a-bundle-from-bridge-cli)).
+Demo video (1:35, with the 15 October refund on mainnet): https://cryppit.github.io/zec-refund-helper/demo.mp4 (also
+attached to the [v0.1.0 release](https://github.com/cryppit/zec-refund-helper/releases/tag/v0.1.0)). Re-cut on 25
+October for the redesigned page: the check, the mainnet refund, shielded refunds into the Ironwood pool since NU6.3
+([why](#why-a-shielded-refund-needs-a-bundle-from-bridge-cli)) and the 24 October scan. The earlier 1:59 cut stays on
+the release as `zcash-refund-helper-demo-1m59.mp4`.
 
 Used for real: on 15 October 2026 this tool's own steps returned a 0.0999 BTC deposit, stuck since August, to the
 address that sent it. NEAR: `execute_refund`
