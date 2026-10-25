@@ -42,7 +42,14 @@ function renderJourney(stops: JourneyStop[]): HTMLElement {
   const list = el("ol", { className: "journey" });
   list.setAttribute("aria-label", stops.map((s) => `${s.title}: ${s.note}`).join(". "));
   stops.forEach((s, i) => {
-    const li = el("li", { className: `jstop ${s.state}` }, el("span", { className: "jnode", text: ICON[s.state] }), el("span", { className: "jtext" }, el("b", { text: s.title }), el("span", { text: s.note })));
+    const logo = document.createElement("img");
+    logo.className = "jlogo";
+    logo.src = `logos/${s.logo === "zcash" ? "zec" : s.logo}.svg`;
+    logo.alt = "";
+    logo.width = 22;
+    logo.height = 22;
+    const node = el("span", { className: "jnode" }, logo, el("span", { className: "jbadge", text: ICON[s.state] }));
+    const li = el("li", { className: `jstop ${s.state}` }, node, el("span", { className: "jtext" }, el("b", { text: s.title }), el("span", { text: s.note })));
     li.querySelector(".jnode")?.setAttribute("aria-hidden", "true");
     if (i < stops.length - 1) li.append(el("span", { className: "jrail" }));
     list.append(li);

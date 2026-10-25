@@ -142,6 +142,8 @@ export interface JourneyStop {
   title: string;
   note: string;
   state: JourneyState;
+  /** The chain the stop happens on, for its logo: the deposit's chain, or NEAR where the bridge contract acts. */
+  logo: UtxoChain | "near";
 }
 
 /**
@@ -153,12 +155,15 @@ export function journeyView(r: Report): JourneyStop[] | null {
   const f = r.facts;
   const chain = UTXO_CHAINS[f.chain].name;
   if (v.state === "not_a_deposit") return null;
-  const deposit: JourneyStop = f.confirmedAtSec ? { title: `Deposit on ${chain}`, note: `Confirmed ${when(f.confirmedAtSec)}`, state: "done" } : { title: `Deposit on ${chain}`, note: "Waiting for its first confirmation", state: "waiting" };
-  const credit = (state: JourneyState, note: string): JourneyStop => ({ title: "Credit on NEAR", note, state });
+  const home = f.chain;
+  const deposit: JourneyStop = f.confirmedAtSec ? { title: `Deposit on ${chain}`, note: `Confirmed ${when(f.confirmedAtSec)}`, state: "done", logo: home } : { title: `Deposit on ${chain}`, note: "Waiting for its first confirmation", state: "waiting", logo: home };
+  const credit = (state: JourneyState, note: string): JourneyStop => ({ title: "Credit on NEAR", note, state, logo: "near" });
   const lockFor = (sec: number): string => (unreachableLock(sec) ? `${lockYears(sec)} years` : describeDuration(sec));
-  const refund = (request: JourneyStop, lock: JourneyStop, execute: JourneyStop, back: JourneyStop): JourneyStop[] => [deposit, credit("stopped", "Never credited: the refund path is the way out"), request, lock, execute, back];
-  const later = (title: string, note: string): JourneyStop => ({ title, note, state: "not_reached" });
-  const back = later("Back to the sender", "To the refund address only");
+  type Step = Omit<JourneyStop, "logo">;
+  // The bridge contract on NEAR runs the request, lock and execute; the coin goes back on its own chain.
+  const refund = (request: Step, lock: Step, execute: Step, back: Step): JourneyStop[] => [deposit, credit("stopped", "Never credited: the refund path is the way out"), { ...request, logo: "near" }, { ...lock, logo: "near" }, { ...execute, logo: "near" }, { ...back, logo: home }];
+  const later = (title: string, note: string): Step => ({ title, note, state: "not_reached" });
+  const back: Step = { title: "Back to the sender", note: "To the refund address only", state: "not_reached" };
 
   switch (v.state) {
     case "unconfirmed":
@@ -174,7 +179,7 @@ export function journeyView(r: Report): JourneyStop[] | null {
     case "too_old":
       return refund({ title: "Refund request", note: "Too old: the bridge no longer has the deposit's block", state: "stopped" }, later("Lock", "Before anyone can execute"), later("Execute", "Anyone can"), back);
     case "refundable": {
-      const request: JourneyStop = unreachableLock(v.lockSec)
+      const request: Step = unreachableLock(v.lockSec)
         ? { title: "Refund request", note: `A refund would be locked for ${lockYears(v.lockSec)} years`, state: "stopped" }
         : v.tooSmall
           ? { title: "Refund request", note: "Smaller than the refund fee: the contract refuses it", state: "stopped" }
@@ -183,7 +188,7 @@ export function journeyView(r: Report): JourneyStop[] | null {
     }
     case "requested": {
       const lock = requestLockSec(r, v.unlocksAtSec);
-      const waits: JourneyStop = unreachableLock(lock) ? { title: "Lock", note: `Locked for ${lockYears(lock)} years`, state: "stopped" } : { title: "Lock", note: `Unlocks ${when(v.unlocksAtSec)}`, state: "waiting" };
+      const waits: Step = unreachableLock(lock) ? { title: "Lock", note: `Locked for ${lockYears(lock)} years`, state: "stopped" } : { title: "Lock", note: `Unlocks ${when(v.unlocksAtSec)}`, state: "waiting" };
       return refund({ title: "Refund requested", note: "The request is on chain", state: "done" }, waits, later("Execute", "Anyone can, after the lock"), back);
     }
     case "ready":

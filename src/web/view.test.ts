@@ -171,6 +171,7 @@ describe("journeyView: the deposit's way, as the stops the page draws and plays"
     expect(j?.map((s) => s.title)).toEqual(["Deposit on Bitcoin", "Credit on NEAR", "Refund requested", "Lock", "Execute", "Back to the sender"]);
     expect(j?.map((s) => s.state)).toEqual(["done", "stopped", "done", "done", "next", "not_reached"]);
     expect(j?.[4]?.note).toContain("Anyone");
+    expect(j?.map((s) => s.logo)).toEqual(["btc", "near", "near", "near", "near", "btc"]);
   });
 
   it("a stuck deposit with no request yet: the request is the next step", () => {
