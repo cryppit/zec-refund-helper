@@ -1,7 +1,7 @@
 // The web page: the same deposit check and refund board as the CLI, run in the browser against public sources only.
 // Everything shown is built with textContent, never parsed as HTML.
 import { checkBtcDeposit, checkRefundBoard, publicUtxoRefundClients } from "../src/btc-refund.js";
-import { boardNotes, boardView, depositView, parseQuery, type DepositView } from "../src/web/view.js";
+import { boardNotes, boardView, depositView, journeyView, parseQuery, type DepositView, type JourneyStop } from "../src/web/view.js";
 
 function byId<T extends HTMLElement>(id: string): T {
   const e = document.getElementById(id);
@@ -35,8 +35,43 @@ const busy = (e: unknown): boolean => e instanceof Error && e.name === "NearRpcU
 const reason = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const nowSec = (): number => Math.floor(Date.now() / 1000);
 
-function renderDeposit(v: DepositView): HTMLElement {
+const ICON: Record<JourneyStop["state"], string> = { done: "✓", next: "→", waiting: "…", stopped: "!", not_reached: "" };
+
+/** The deposit's way, top to bottom: each stop with its state, the rail between them. Text only, no HTML parsing. */
+function renderJourney(stops: JourneyStop[]): HTMLElement {
+  const list = el("ol", { className: "journey" });
+  list.setAttribute("aria-label", stops.map((s) => `${s.title}: ${s.note}`).join(". "));
+  stops.forEach((s, i) => {
+    const li = el("li", { className: `jstop ${s.state}` }, el("span", { className: "jnode", text: ICON[s.state] }), el("span", { className: "jtext" }, el("b", { text: s.title }), el("span", { text: s.note })));
+    li.querySelector(".jnode")?.setAttribute("aria-hidden", "true");
+    if (i < stops.length - 1) li.append(el("span", { className: "jrail" }));
+    list.append(li);
+  });
+  return list;
+}
+
+/** Plays the journey in: the rail draws down stop by stop until the first one nobody has reached; a stop that did not happen pulses. */
+function playJourney(list: HTMLElement): void {
+  if (typeof list.animate !== "function" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const stops = [...list.querySelectorAll<HTMLElement>(".jstop")];
+  let t = 0;
+  for (const [i, stop] of stops.entries()) {
+    const node = stop.querySelector<HTMLElement>(".jnode");
+    const text = stop.querySelector<HTMLElement>(".jtext");
+    node?.animate([{ opacity: 0.15, transform: "scale(0.6)" }, { opacity: 1, transform: "scale(1.15)", offset: 0.6 }, { opacity: 1, transform: "scale(1)" }], { duration: 380, delay: t, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "backwards" });
+    text?.animate([{ opacity: 0.15, transform: "translateX(-6px)" }, { opacity: 1, transform: "none" }], { duration: 340, delay: t + 60, easing: "ease-out", fill: "backwards" });
+    if (node && stop.classList.contains("stopped")) node.animate([{ boxShadow: "0 0 0 0 rgba(255,181,71,0.6)" }, { boxShadow: "0 0 0 14px rgba(255,181,71,0)" }], { duration: 700, delay: t + 360, iterations: 3, easing: "ease-out" });
+    if (node && stop.classList.contains("next")) node.animate([{ boxShadow: "0 0 0 0 rgba(221,242,74,0.6)" }, { boxShadow: "0 0 0 14px rgba(221,242,74,0)" }], { duration: 900, delay: t + 360, iterations: 3, easing: "ease-out" });
+    const rail = stop.querySelector<HTMLElement>(".jrail");
+    const reached = stops[i + 1] && !stops[i + 1]?.classList.contains("not_reached");
+    if (rail && reached) rail.animate([{ transform: "scaleY(0)" }, { transform: "scaleY(1)" }], { duration: 300, delay: t + 200, easing: "ease-in-out", fill: "backwards" });
+    t += reached ? 420 : 160;
+  }
+}
+
+function renderDeposit(v: DepositView, journey: JourneyStop[] | null): HTMLElement {
   const card = el("article", { className: `card ${v.tone}` }, el("p", { className: "kicker", text: `${v.chain} deposit` }), el("h2", { text: v.title }));
+  if (journey) card.append(renderJourney(journey));
   const dl = el("dl");
   for (const f of v.facts) dl.append(el("dt", { text: f.label }), el("dd", {}, f.href ? el("a", { href: f.href, text: f.value }) : f.value));
   card.append(dl, el("div", { className: "headline" }, ...v.headline.map((line) => el("p", { text: line }))));
@@ -80,7 +115,10 @@ async function check(raw: string): Promise<void> {
   try {
     const r = await checkBtcDeposit(q.txid, publicUtxoRefundClients(), nowSec(), q.vout);
     if (mine !== latest) return;
-    out.replaceChildren("error" in r ? el("p", { className: "err", text: r.error }) : renderDeposit(depositView(r)));
+    if ("error" in r) return void out.replaceChildren(el("p", { className: "err", text: r.error }));
+    out.replaceChildren(renderDeposit(depositView(r), journeyView(r)));
+    const journey = out.querySelector<HTMLElement>(".journey");
+    if (journey) playJourney(journey);
   } catch (e) {
     if (mine !== latest) return;
     out.replaceChildren(el("p", { className: "err", text: busy(e) ? BUSY : `The check failed: ${reason(e)}` }));

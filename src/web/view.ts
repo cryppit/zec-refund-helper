@@ -134,3 +134,63 @@ export function boardNotes(rows: BoardRow[]): string[] {
   const years = boardLockYears(rows);
   return ["Ready: the lock has passed and anyone can execute the refund; the coin can only go to the address shown.", ...(years === null ? [] : [`Locked for ${years} years: ${BOARD_LOCK_WHY}`])];
 }
+
+/** `next`: the step someone can take now; `waiting`: it is coming without anyone acting; `stopped`: it did not happen. */
+export type JourneyState = "done" | "next" | "waiting" | "stopped" | "not_reached";
+
+export interface JourneyStop {
+  title: string;
+  note: string;
+  state: JourneyState;
+}
+
+/**
+ * The deposit's way as the page draws it: on its chain, the credit on NEAR, and, when the bridge never credited it, the
+ * refund path (request, lock, execute, back to the sender). Null for a transaction that is not a bridge deposit.
+ */
+export function journeyView(r: Report): JourneyStop[] | null {
+  const v = r.verdict;
+  const f = r.facts;
+  const chain = UTXO_CHAINS[f.chain].name;
+  if (v.state === "not_a_deposit") return null;
+  const deposit: JourneyStop = f.confirmedAtSec ? { title: `Deposit on ${chain}`, note: `Confirmed ${when(f.confirmedAtSec)}`, state: "done" } : { title: `Deposit on ${chain}`, note: "Waiting for its first confirmation", state: "waiting" };
+  const credit = (state: JourneyState, note: string): JourneyStop => ({ title: "Credit on NEAR", note, state });
+  const lockFor = (sec: number): string => (unreachableLock(sec) ? `${lockYears(sec)} years` : describeDuration(sec));
+  const refund = (request: JourneyStop, lock: JourneyStop, execute: JourneyStop, back: JourneyStop): JourneyStop[] => [deposit, credit("stopped", "Never credited: the refund path is the way out"), request, lock, execute, back];
+  const later = (title: string, note: string): JourneyStop => ({ title, note, state: "not_reached" });
+  const back = later("Back to the sender", "To the refund address only");
+
+  switch (v.state) {
+    case "unconfirmed":
+      return [deposit, credit("not_reached", "After the deposit confirms")];
+    case "credited":
+      return [deposit, credit("done", r.orderAccount ? `Into ${r.orderAccount.slice(0, 10)}…` : "Into the NEAR account it named")];
+    case "crediting":
+      return [deposit, credit("waiting", "Not credited yet; the bridge usually credits within the hour")];
+    case "absorbed":
+      return [deposit, credit("stopped", `Absorbed below the bridge's minimum: no refund path`)];
+    case "placeholder_refund":
+      return refund({ title: "Refund request", note: "Its refund address is a public placeholder", state: "stopped" }, later("Lock", "Before anyone can execute"), later("Execute", "Anyone can"), back);
+    case "too_old":
+      return refund({ title: "Refund request", note: "Too old: the bridge no longer has the deposit's block", state: "stopped" }, later("Lock", "Before anyone can execute"), later("Execute", "Anyone can"), back);
+    case "refundable": {
+      const request: JourneyStop = unreachableLock(v.lockSec)
+        ? { title: "Refund request", note: `A refund would be locked for ${lockYears(v.lockSec)} years`, state: "stopped" }
+        : v.tooSmall
+          ? { title: "Refund request", note: "Smaller than the refund fee: the contract refuses it", state: "stopped" }
+          : { title: "Refund request", note: "Your step: request it (2 NEAR, signed by you)", state: "next" };
+      return refund(request, later("Lock", lockFor(v.lockSec)), later("Execute", "Anyone can, after the lock"), back);
+    }
+    case "requested": {
+      const lock = requestLockSec(r, v.unlocksAtSec);
+      const waits: JourneyStop = unreachableLock(lock) ? { title: "Lock", note: `Locked for ${lockYears(lock)} years`, state: "stopped" } : { title: "Lock", note: `Unlocks ${when(v.unlocksAtSec)}`, state: "waiting" };
+      return refund({ title: "Refund requested", note: "The request is on chain", state: "done" }, waits, later("Execute", "Anyone can, after the lock"), back);
+    }
+    case "ready":
+      return refund({ title: "Refund requested", note: "The request is on chain", state: "done" }, { title: "Lock", note: `Passed ${when(v.unlockedAtSec)}`, state: "done" }, { title: "Execute", note: "Anyone can execute it now", state: "next" }, back);
+    case "executed":
+      return refund({ title: "Refund requested", note: "The request is on chain", state: "done" }, { title: "Lock", note: "Passed", state: "done" }, { title: "Execute", note: "Executed", state: "done" }, { title: "Back to the sender", note: "The bridge signs and sends it", state: "waiting" });
+    case "refunded":
+      return refund({ title: "Refund requested", note: "The request is on chain", state: "done" }, { title: "Lock", note: "Passed", state: "done" }, { title: "Execute", note: "Executed", state: "done" }, { title: "Back to the sender", note: `Returned to ${v.refundTo.slice(0, 12)}…`, state: "done" });
+  }
+}

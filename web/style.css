@@ -69,3 +69,23 @@ footer { margin-top: 56px; font-size: 14px; }
 }
 .privacy { margin: 6px 0 0; padding-left: 20px; }
 .privacy li { margin: 4px 0; }
+
+/* The deposit's way: a vertical rail of stops, played in when a check finishes (web/main.ts). */
+.journey { list-style: none; margin: 4px 0 24px; padding: 18px 18px 6px; border: 1px solid var(--line); border-radius: 14px; background: rgba(4, 6, 26, 0.55); }
+.jstop { position: relative; display: flex; gap: 14px; align-items: flex-start; padding-bottom: 18px; }
+.jnode { flex: 0 0 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font: 700 16px/1 var(--mono); background: var(--lime); color: #0a0f2c; box-shadow: 0 0 0 4px rgba(221, 242, 74, 0.14), 0 0 20px rgba(221, 242, 74, 0.35); position: relative; z-index: 1; }
+.jtext { display: flex; flex-direction: column; gap: 2px; padding-top: 5px; min-width: 0; }
+.jtext b { font-size: 16px; }
+.jtext span { color: var(--mute); font-size: 14px; overflow-wrap: anywhere; }
+.jrail { position: absolute; left: 16px; top: 36px; bottom: 0; width: 2px; background: var(--lime); transform-origin: 50% 0; }
+.jstop.next .jnode { background: transparent; color: var(--lime); box-shadow: inset 0 0 0 2px var(--lime), 0 0 18px rgba(221, 242, 74, 0.3); }
+.jstop.next b { color: var(--lime); }
+.jstop.waiting .jnode { background: transparent; color: #7dd3fc; box-shadow: inset 0 0 0 2px #7dd3fc; }
+.jstop.waiting b { color: #7dd3fc; }
+.jstop.stopped .jnode { background: rgba(255, 181, 71, 0.12); color: var(--amber); box-shadow: inset 0 0 0 2px var(--amber), 0 0 18px rgba(255, 181, 71, 0.3); }
+.jstop.stopped b { color: var(--amber); }
+.jstop.stopped .jrail { background: repeating-linear-gradient(180deg, var(--amber) 0 5px, transparent 5px 10px); }
+.jstop.not_reached .jnode { background: transparent; box-shadow: inset 0 0 0 2px #6b7299; }
+.jstop.not_reached b, .jstop.not_reached span { color: #7b82a8; }
+.jstop:has(+ .not_reached) .jrail, .jstop.not_reached .jrail { background: repeating-linear-gradient(180deg, #6b7299 0 4px, transparent 4px 9px); }
+.jstop:last-child { padding-bottom: 8px; }
