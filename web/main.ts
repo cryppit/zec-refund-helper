@@ -170,5 +170,25 @@ window.addEventListener("hashchange", () => {
   if (q) void check(q);
 });
 boardBtn.addEventListener("click", () => void showBoard());
+
+// The real result beside "How a check works": the 0.1 BTC deposit refunded on 15 October, played when it comes into view.
+const EXAMPLE: JourneyStop[] = [
+  { title: "Deposit on Bitcoin", note: "Confirmed 2026-08-19 17:19 UTC", state: "done", logo: "btc" },
+  { title: "Credit on NEAR", note: "Never credited: the refund path is the way out", state: "stopped", logo: "near" },
+  { title: "Refund requested", note: "The request is on chain", state: "done", logo: "near" },
+  { title: "Lock", note: "Passed", state: "done", logo: "near" },
+  { title: "Execute", note: "Executed 15 October", state: "done", logo: "near" },
+  { title: "Back to the sender", note: "Returned to bc1qyp0a54gj…", state: "done", logo: "btc" },
+];
+const exampleBox = document.getElementById("example-journey");
+if (exampleBox) {
+  const list = renderJourney(EXAMPLE);
+  exampleBox.replaceChildren(list);
+  new IntersectionObserver((entries, observer) => {
+    if (!entries.some((e) => e.isIntersecting)) return;
+    observer.disconnect();
+    playJourney(list);
+  }, { threshold: 0.5 }).observe(list);
+}
 const initial = fromHash();
 if (initial) void check(initial);

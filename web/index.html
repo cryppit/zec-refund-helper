@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src https:; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src https:; img-src 'self' data:; media-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="referrer" content="no-referrer">
 <title>Zcash Refund Helper</title>
 <meta name="description" content="Find a Zcash or Bitcoin deposit stuck in the NEAR Omni bridge and get the bridge's own refund steps. Keyless and read-only; it never signs anything.">
@@ -11,41 +11,130 @@
 <script type="module" src="main.js"></script>
 </head>
 <body>
-<main>
-  <header>
-    <p class="kicker">ZECATHON 2026 · Cross-Chain</p>
-    <h1>Zcash Refund <span class="accent">Helper</span></h1>
-    <p class="lede">Paste the hash of a Zcash or Bitcoin deposit stuck in the NEAR Omni bridge. You get the bridge's own refund steps, back to your own address, shielded when your address can take it.</p>
-    <p class="pills"><span>No wallet</span><span>No keys</span><span>Nothing to sign</span></p>
-  </header>
+<nav class="top" aria-label="Site">
+  <a class="brand" href="#top"><img src="logos/zec.svg" alt="" width="30" height="30"><span>Zcash Refund Helper</span></a>
+  <span class="top-links"><a href="#how">How it works</a><a href="#board-wrap">Open refunds</a><a href="#demo">Demo</a></span>
+  <a class="gh" href="https://github.com/cryppit/zec-refund-helper" target="_blank" rel="noopener noreferrer">GitHub</a>
+</nav>
 
-  <form id="form" autocomplete="off">
-    <label for="q">Your Zcash or Bitcoin transaction hash</label>
-    <div class="row">
-      <input id="q" spellcheck="false" placeholder="64 hex characters, from your wallet">
-      <button type="submit">Check</button>
+<main id="top">
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="chip"><span>‹/›</span> Open source · MIT · Read-only</p>
+      <h1>Zcash Refund <span class="gold">Helper</span></h1>
+      <p class="tagline">Investigate. Verify. Recover.</p>
+      <p class="lede">Paste the hash of a Zcash or Bitcoin deposit stuck in the NEAR Omni bridge. You get where it stands, read from the chain and the bridge contract, and the bridge's own refund steps back to your address, shielded when your address can take it.</p>
+      <p class="ctas"><a class="btn gold-btn" href="#check">Check a deposit →</a><a class="btn ghost-btn" href="https://github.com/cryppit/zec-refund-helper" target="_blank" rel="noopener noreferrer">View on GitHub</a></p>
+      <dl class="stats">
+        <div><dt>0 keys</dt><dd>held or asked for</dd></div>
+        <div><dt>MIT</dt><dd>open source</dd></div>
+        <div><dt>BTC ⇄ ZEC</dt><dd>Omni bridge deposits</dd></div>
+        <div><dt>221 tests</dt><dd>run offline</dd></div>
+      </dl>
     </div>
-    <p class="examples">Your browser asks the public services named at the bottom of this page directly, so they see your IP address. To hide it, use a VPN you trust, or Tor Browser (some Tor exits are refused: if a check fails, try a new circuit).</p>
-    <p class="examples">Try a real one: <a href="#q=9deffb31135e3cdf6a62088d8639166673fe91c0e150fd9c80f6e61bba2bec39">a 0.1 BTC refund we ran with this tool on 15 Oct</a> · <a href="#q=04dc643f8a1d19baf476178d01eac8fc553700e36f849df91e46924fa3f2cae6">50 ZEC from the shielded pool</a> · <a href="#q=6de202d64d2b7c04154ed73f892c7dd7f288d440bde80d39059d2341fd9abadc">a credited ZEC deposit</a></p>
-  </form>
+
+    <div class="hero-art" aria-hidden="true">
+      <svg class="bridge" viewBox="0 0 400 220" preserveAspectRatio="none">
+        <path class="arc arc-glow" d="M70 150 C 150 30, 250 30, 330 150"/>
+        <path class="arc" d="M70 150 C 150 30, 250 30, 330 150"/>
+        <path class="arc arc-back" d="M330 160 C 250 215, 150 215, 70 160"/>
+      </svg>
+      <span class="packet p1"></span><span class="packet p2"></span>
+      <div class="coin zec"><img src="logos/zec.svg" alt="" width="84" height="84"><span>Zcash<br>(ZEC)</span></div>
+      <div class="coin btc"><img src="logos/btc.svg" alt="" width="84" height="84"><span>Bitcoin<br>(BTC)</span></div>
+      <div class="float f1"><b>Bridge state</b><span>read live from the contract</span></div>
+      <div class="float f2"><b>Refund steps</b><span>you sign each one</span></div>
+      <div class="float f3"><b>What's public</b><span>listed on every report</span></div>
+    </div>
+
+    <aside class="panel" id="check">
+      <h2>Investigate a deposit</h2>
+      <form id="form" autocomplete="off">
+        <label for="q">Zcash or Bitcoin transaction hash</label>
+        <input id="q" spellcheck="false" placeholder="64 hex characters, from your wallet">
+        <button type="submit">Check deposit →</button>
+      </form>
+      <p class="hint">Supports BTC and ZEC deposits to the Omni bridge. Your browser asks the public services named below directly, so they see your IP address; use a VPN you trust or Tor Browser to hide it (some Tor exits are refused: try a new circuit).</p>
+      <h3>Real lookups</h3>
+      <ul class="examples">
+        <li><a href="#q=9deffb31135e3cdf6a62088d8639166673fe91c0e150fd9c80f6e61bba2bec39"><img src="logos/btc.svg" alt="" width="22" height="22"><span class="ex-id">9deffb31…</span><span>0.1 BTC</span><span class="ex-tag ok">Refunded 15 Oct</span></a></li>
+        <li><a href="#q=04dc643f8a1d19baf476178d01eac8fc553700e36f849df91e46924fa3f2cae6"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">04dc643f…</span><span>50 ZEC</span><span class="ex-tag">Shielded pool</span></a></li>
+        <li><a href="#q=6de202d64d2b7c04154ed73f892c7dd7f288d440bde80d39059d2341fd9abadc"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">6de202d6…</span><span>ZEC</span><span class="ex-tag">Credited</span></a></li>
+      </ul>
+    </aside>
+  </section>
 
   <section id="out" aria-live="polite"></section>
 
-  <section class="board-wrap">
+  <section class="how" id="how">
+    <div class="flow-card">
+      <h2>How a check works</h2>
+      <p class="muted">From your transaction hash to the way back, read from public data only.</p>
+      <ol class="flow">
+        <li><span class="fi i-paste" aria-hidden="true"></span><b>1. Paste</b><span>the deposit's transaction hash</span></li>
+        <li><span class="fi i-read" aria-hidden="true"></span><b>2. Read</b><span>the chain, the bridge indexer and the NEAR contract</span></li>
+        <li><span class="fi i-sort" aria-hidden="true"></span><b>3. Classify</b><span>credited, stuck, requested, ready, executed, refunded or not recoverable</span></li>
+        <li><span class="fi i-steps" aria-hidden="true"></span><b>4. Steps</b><span>the exact calls left, what each costs, signed by you</span></li>
+        <li><span class="fi i-home" aria-hidden="true"></span><b>5. Back home</b><span>only to the refund address the bridge allows</span></li>
+      </ol>
+    </div>
+    <div class="result-card">
+      <p class="eyebrow">A real result</p>
+      <h3 class="ok-title">Refunded</h3>
+      <p class="muted">The 0.1 BTC deposit of 19 August, refunded with this tool's steps on 15 October.</p>
+      <div id="example-journey"></div>
+      <a class="more-link" href="#q=9deffb31135e3cdf6a62088d8639166673fe91c0e150fd9c80f6e61bba2bec39">Open the full report →</a>
+    </div>
+  </section>
+
+  <section class="features">
+    <article class="feat art-a">
+      <span class="fx" aria-hidden="true"><img src="logos/zec.svg" alt="" width="34" height="34"></span>
+      <h3>Zcash-native</h3>
+      <p>Unified addresses decoded from scratch per ZIP-316 and tested on the official vectors; TEX addresses per ZIP-320. A refund to an Orchard receiver goes back shielded.</p>
+      <p class="tags"><span>Unified addresses</span><span>TEX</span><span>Orchard refunds</span><span>Sapling warning</span></p>
+    </article>
+    <article class="feat art-b">
+      <span class="fx fx-c" aria-hidden="true"></span>
+      <h3>Clear recovery steps</h3>
+      <p>For a refundable deposit: every NEAR call left, what it costs, and the only address the coin can go to. Where a request would only lose its fee, it says so.</p>
+      <p class="tags"><span>Eligibility</span><span>Exact calls</span><span>Fees shown</span><span>Lock times</span></p>
+    </article>
+    <article class="feat art-c">
+      <span class="fx fx-o" aria-hidden="true"></span>
+      <h3>Open source &amp; keyless</h3>
+      <p>MIT licensed and read-only: no wallet, no keys, no server of ours. Lookups go from your browser straight to public APIs, and nothing is stored.</p>
+      <p class="tags"><span>MIT</span><span>No keys</span><span>No server</span><span>221 tests</span></p>
+    </article>
+  </section>
+
+  <section class="states">
+    <h2>What it tells apart</h2>
+    <p class="muted">Every deposit gets one of these, from the chain and the bridge contract.</p>
+    <ul class="state-grid">
+      <li class="st ok"><b>Credited</b><span>The bridge took it in; nothing to do.</span></li>
+      <li class="st warn"><b>Stuck, refundable</b><span>Never credited; the refund path is open.</span></li>
+      <li class="st info"><b>Requested or ready</b><span>Waiting out the lock, or anyone can execute.</span></li>
+      <li class="st ok"><b>Refunded</b><span>Back at the refund address.</span></li>
+      <li class="st bad"><b>Not recoverable</b><span>Below the minimum, a placeholder address, too old, or the 100-year lock.</span></li>
+    </ul>
+  </section>
+
+  <section class="board-wrap" id="board-wrap">
     <h2>Every open refund</h2>
     <p class="muted">Refund requests on the Omni Bitcoin and Zcash connectors, read live from the contracts.</p>
     <button id="board-btn" type="button">Show the board</button>
     <div id="board" aria-live="polite"></div>
   </section>
 
-  <section class="video-wrap">
+  <section class="video-wrap" id="demo">
     <h2>The 2-minute demo</h2>
     <video controls preload="none" playsinline poster="poster.jpg" src="demo.mp4">Your browser cannot play this video. <a href="demo.mp4">Download it</a>.</video>
   </section>
 
   <footer>
     <p>Open source (MIT): <a href="https://github.com/cryppit/zec-refund-helper" target="_blank" rel="noopener noreferrer">github.com/cryppit/zec-refund-helper</a> · by Cryppit</p>
-    <p class="muted">Lookups go from your browser straight to public sources (mempool.space, Blockchair, NEAR RPC, the Omni bridge indexer); nothing passes through us or is stored. Independent project, not affiliated with NEAR, the Omni bridge or the Zcash organisations. It never holds keys or signs anything.</p>
+    <p class="muted">Lookups go from your browser straight to public sources (mempool.space, Blockchair, NEAR RPC, the Omni bridge indexer); nothing passes through us or is stored. Independent project, not affiliated with NEAR, the Omni bridge or the Zcash organisations. It never holds keys or signs anything. Chain logos: web3icons (MIT).</p>
   </footer>
 </main>
 </body>
