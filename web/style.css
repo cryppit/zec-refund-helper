@@ -103,3 +103,9 @@ footer { margin-top: 56px; font-size: 14px; }
 .jstop.stopped .jbadge { background: var(--amber); }
 .jstop.not_reached .jnode { background: #04061a; }
 .jstop.not_reached .jlogo { filter: grayscale(1); opacity: 0.4; }
+
+/* Header art (Higgsfield, made for this page): the lime path that loops back home, fading into the page. */
+main > header { position: relative; }
+main > header::before { content: ""; position: absolute; z-index: -1; top: -48px; right: -12%; width: 70%; height: calc(100% + 80px); background: url(refund.jpg) center / cover no-repeat; opacity: 0.55; -webkit-mask-image: radial-gradient(closest-side, #000 45%, transparent 100%); mask-image: radial-gradient(closest-side, #000 45%, transparent 100%); pointer-events: none; }
+main { position: relative; z-index: 0; }
+@media (max-width: 700px) { main > header::before { width: 100%; right: -30%; opacity: 0.3; } }
