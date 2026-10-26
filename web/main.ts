@@ -12,6 +12,8 @@ function byId<T extends HTMLElement>(id: string): T {
 
 const form = byId<HTMLFormElement>("form");
 const input = byId<HTMLInputElement>("q");
+const aform = byId<HTMLFormElement>("aform");
+const ainput = byId<HTMLInputElement>("aq");
 const out = byId<HTMLElement>("out");
 const boardBtn = byId<HTMLButtonElement>("board-btn");
 const board = byId<HTMLElement>("board");
@@ -123,17 +125,21 @@ function renderAddress(v: AddressView): HTMLElement {
 }
 
 let latest = 0;
+/** The address check: offline, from the address itself. */
+function checkAddress(raw: string): void {
+  latest++;
+  ainput.value = raw.trim();
+  const address = asZcashAddress(raw);
+  out.replaceChildren(address ? renderAddress(addressView(address)) : el("p", { className: "err", text: "That is not a Zcash address. Zcash addresses start with t1, t3, tex1, u1 or zs1 (on testnet: tm, textest1, utest1 or ztestsapling1)." }));
+  out.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 async function check(raw: string): Promise<void> {
   const q = parseQuery(raw);
   if (!q) {
-    const address = asZcashAddress(raw);
-    if (address) {
-      latest++;
-      input.value = raw.trim();
-      out.replaceChildren(renderAddress(addressView(address)));
-      return;
-    }
-    out.replaceChildren(el("p", { className: "err", text: "Paste a Zcash or Bitcoin transaction hash (64 hexadecimal characters, optionally followed by :output) or a Zcash address." }));
+    // A Zcash address pasted into the deposit box goes to the address check.
+    if (asZcashAddress(raw)) return checkAddress(raw);
+    out.replaceChildren(el("p", { className: "err", text: "Paste a Zcash or Bitcoin transaction hash: 64 hexadecimal characters, optionally followed by :output. To check a Zcash address, use the box beside it." }));
     return;
   }
   input.value = raw.trim();
@@ -176,19 +182,34 @@ const fromHash = (): string | null => {
   const m = /^#q=(.+)$/.exec(location.hash);
   return m ? decodeURIComponent(m[1] ?? "") : null;
 };
+const addressFromHash = (): string | null => {
+  const m = /^#a=(.+)$/.exec(location.hash);
+  return m ? decodeURIComponent(m[1] ?? "") : null;
+};
+
+aform.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const a = asZcashAddress(ainput.value);
+  if (!a) return checkAddress(ainput.value);
+  const next = `#a=${encodeURIComponent(a.address)}`;
+  if (location.hash === next) checkAddress(a.address);
+  else location.hash = next;
+});
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const q = parseQuery(input.value);
   const address = q ? null : asZcashAddress(input.value);
   if (!q && !address) return void check(input.value);
-  const next = q ? `#q=${q.txid}${q.vout === undefined ? "" : `:${q.vout}`}` : `#q=${encodeURIComponent(address?.address ?? "")}`;
+  const next = q ? `#q=${q.txid}${q.vout === undefined ? "" : `:${q.vout}`}` : `#a=${encodeURIComponent(address?.address ?? "")}`;
   if (location.hash === next) void check(input.value);
   else location.hash = next;
 });
 window.addEventListener("hashchange", () => {
   const q = fromHash();
   if (q) void check(q);
+  const a = addressFromHash();
+  if (a) checkAddress(a);
 });
 boardBtn.addEventListener("click", () => void showBoard());
 
@@ -213,3 +234,5 @@ if (exampleBox) {
 }
 const initial = fromHash();
 if (initial) void check(initial);
+const initialAddress = addressFromHash();
+if (initialAddress) checkAddress(initialAddress);
