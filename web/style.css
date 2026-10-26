@@ -18,7 +18,7 @@
 html, body { margin: 0; background: radial-gradient(1100px 600px at 80% -10%, rgba(42, 59, 214, 0.28), transparent 60%), var(--deep); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 1240px; margin: 0 auto; padding: 24px 20px 64px; position: relative; z-index: 0; }
 #out, footer { max-width: 980px; margin-left: auto; margin-right: auto; }
-#out { scroll-margin-top: 84px; }
+#out, main > section, .tools .panel { scroll-margin-top: 84px; }
 a { color: var(--lime); }
 h1 { font-size: clamp(40px, 7vw, 72px); line-height: 1; letter-spacing: -0.03em; margin: 10px 0 16px; }
 h2 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.01em; }
@@ -77,6 +77,9 @@ footer { margin-top: 56px; font-size: 14px; }
   dl { grid-template-columns: 1fr; }
   dt { margin-top: 8px; }
   .cmd { flex-direction: column; }
+  .card { padding: 20px 18px 16px; }
+  .card h2 { font-size: 24px; line-height: 1.2; }
+  .wallets li { padding: 12px; gap: 10px; }
 }
 .privacy { margin: 6px 0 0; padding-left: 20px; }
 .privacy li { margin: 4px 0; }

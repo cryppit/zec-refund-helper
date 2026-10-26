@@ -15,11 +15,11 @@ Keyless and read-only: it never asks for, sees or holds a key, and it never sign
 Live demo: https://cryppit.github.io/zec-refund-helper/ (this repository's own web page, `web/`: the same checks, run in
 your browser against public sources only).
 
-Demo video (1:35, with the 15 October refund on mainnet): https://cryppit.github.io/zec-refund-helper/demo.mp4 (also
-attached to the [v0.1.0 release](https://github.com/cryppit/zec-refund-helper/releases/tag/v0.1.0)). Re-cut on 25
-October for the redesigned page: the check, the mainnet refund, shielded refunds into the Ironwood pool since NU6.3
-([why](#why-a-shielded-refund-needs-a-bundle-from-bridge-cli)) and the 24 October scan. The earlier 1:59 cut stays on
-the release as `zcash-refund-helper-demo-1m59.mp4`.
+Demo video (1:50, with the 15 October refund on mainnet): https://cryppit.github.io/zec-refund-helper/demo.mp4 (also
+attached to the [v0.1.0 release](https://github.com/cryppit/zec-refund-helper/releases/tag/v0.1.0)). Re-cut on 27
+October: the check, the mainnet refund, shielded refunds into the Ironwood pool since NU6.3
+([why](#why-a-shielded-refund-needs-a-bundle-from-bridge-cli)), the address check and the 26 October scan. The earlier
+cuts stay on the release as `zcash-refund-helper-demo-1m35.mp4` and `zcash-refund-helper-demo-1m59.mp4`.
 
 Used for real: on 15 October 2026 this tool's own steps returned a 0.0999 BTC deposit, stuck since August, to the
 address that sent it. NEAR: `execute_refund`
@@ -136,8 +136,8 @@ It covers t-addresses, TEX (ZIP 320), unified addresses by receiver (ZIP 316), S
 the address, so nobody names a refund address the bridge can never pay. It reads only the address itself: nothing is
 looked up or sent, on the page or in the terminal.
 
-Who asked for it: a wallet support team, replying on the Zcash forum on 26 October 2026, asked for a plain next step
-("can my user send to this?") instead of only the address type. This was added on 27 October in answer.
+Who asked for it: a wallet support team, replying on the Zcash forum on 26 October 2026, asked for a plain-language next
+step (can their user send to this address?) instead of only the address type. This was added on 27 October in answer.
 
 ### How much is stuck: `--scan`
 

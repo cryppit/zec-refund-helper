@@ -10,6 +10,15 @@ which also lists every deposit with its transaction hash, so anyone can check it
 > 14-day locks and "refundable now" counts below are as of 2026-10-13. The tool now gives no steps on that lock: see
 > [README, The 100-year lock](README.md#the-100-year-lock-since-mid-october-2026).
 
+> **Re-checked 2026-10-26** (a full `--scan` of the Omni indexer since 2026-06-25, snapshot 21:17–22:07 UTC, all 665
+> candidates checked, none left unchecked): **36 user deposits, 7.60713263 BTC, were never credited.** **15 (5.56461867
+> BTC) named their own refund address** and can go back there: 14 have no request yet, and 1 (0.001 BTC, requested on
+> 24 October) is past its lock and waits for anyone to execute it. **20 (1.99251396 BTC) named none** and sit behind the
+> 100-year lock; 1 (0.05 BTC) names a public placeholder. Since the 24 October scan, **3 deposits went home through the
+> bridge's refund (0.61 BTC: 0.48, 0.1 and 0.03 BTC, each checked with `zec-refund <txid>`: Bitcoin transactions
+> 6fb3e37e…, a7447173… and 1f0305cd…)**, run by their owners, not by us, and 2 new deposits went uncredited (0.001582
+> BTC). Zcash is unchanged: 54 deposits absorbed below the minimum (33 shielded-funded), none stuck uncredited.
+
 > **Re-checked 2026-10-24** (a full `--scan` of the Omni indexer since 2026-06-25, snapshot ~15:21–16:03 UTC, every
 > candidate checked against Bitcoin and the connector): **37 user deposits, 8.21555063 BTC, were never credited**, 8 of
 > them (2.73447623 BTC) since 2026-10-18, so the bridge is still failing to credit some new deposits. **17 (6.17361867 BTC)
