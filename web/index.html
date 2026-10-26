@@ -41,7 +41,7 @@
         <div><dt>0 keys</dt><dd>held or asked for</dd></div>
         <div><dt>MIT</dt><dd>open source</dd></div>
         <div><dt>BTC · ZEC</dt><dd>deposits into NEAR</dd></div>
-        <div><dt>221 tests</dt><dd>run offline</dd></div>
+        <div><dt>233 tests</dt><dd>run offline</dd></div>
       </dl>
     </div>
 
@@ -62,11 +62,12 @@
     <aside class="panel" id="check">
       <h2>Investigate a deposit</h2>
       <form id="form" autocomplete="off">
-        <label for="q">Zcash or Bitcoin transaction hash</label>
-        <input id="q" spellcheck="false" placeholder="64 hex characters, from your wallet">
-        <button type="submit">Check deposit →</button>
+        <label for="q">Zcash or Bitcoin transaction hash, or a Zcash address</label>
+        <input id="q" spellcheck="false" placeholder="a transaction hash, or a t1…, tex1…, u1… or zs1… address">
+        <button type="submit">Check →</button>
       </form>
       <p class="hint">Supports BTC and ZEC deposits to the Omni bridge. Your browser asks the public services named below directly, so they see your IP address; use a VPN you trust or Tor Browser to hide it (some Tor exits are refused: try a new circuit).</p>
+      <p class="hint">About to send ZEC? Paste the address to see whether a transparent-only or a shielded wallet can pay it, and which refund the bridge could make to it. That check runs offline, in your browser, and sends nothing. <a href="#q=tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte">Try the ZIP 320 example</a>.</p>
       <h3>Real lookups</h3>
       <ul class="examples">
         <li><a href="#q=9deffb31135e3cdf6a62088d8639166673fe91c0e150fd9c80f6e61bba2bec39"><img src="logos/btc.svg" alt="" width="22" height="22"><span class="ex-id">9deffb31…</span><span>0.1 BTC</span><span class="ex-tag ok">Refunded 15 Oct</span></a></li>
@@ -116,7 +117,7 @@
       <span class="fx fx-o" aria-hidden="true"></span>
       <h3>Open source &amp; keyless</h3>
       <p>MIT licensed and read-only: no wallet, no keys, no server of ours. Lookups go from your browser straight to public APIs, and nothing is stored.</p>
-      <p class="tags"><span>MIT</span><span>No keys</span><span>No server</span><span>221 tests</span></p>
+      <p class="tags"><span>MIT</span><span>No keys</span><span>No server</span><span>233 tests</span></p>
     </article>
   </section>
 

@@ -1,7 +1,8 @@
 // The web page: the same deposit check and refund board as the CLI, run in the browser against public sources only.
 // Everything shown is built with textContent, never parsed as HTML.
 import { checkBtcDeposit, checkRefundBoard, publicUtxoRefundClients } from "../src/btc-refund.js";
-import { boardNotes, boardView, depositView, journeyView, parseQuery, type DepositView, type JourneyStop } from "../src/web/view.js";
+import { asZcashAddress } from "../src/render-address.js";
+import { addressView, boardNotes, boardView, depositView, journeyView, parseQuery, type AddressView, type DepositView, type JourneyStop } from "../src/web/view.js";
 
 function byId<T extends HTMLElement>(id: string): T {
   const e = document.getElementById(id);
@@ -109,11 +110,30 @@ function renderDeposit(v: DepositView, journey: JourneyStop[] | null): HTMLEleme
   return card;
 }
 
+/** A Zcash address checked before sending: the plain next step, each kind of wallet, the refund it can take. */
+function renderAddress(v: AddressView): HTMLElement {
+  const card = el("article", { className: `card ${v.tone}` }, el("p", { className: "kicker", text: "Zcash address · before you send" }), el("h2", { text: v.title }));
+  const wallets = el("ul", { className: "wallets" });
+  for (const w of v.wallets) wallets.append(el("li", { className: w.can === "no" ? "no" : "yes" }, el("span", { className: "mark", text: w.can === "no" ? "✕" : "✓" }), el("div", {}, el("b", { text: w.label }), el("p", { text: w.why }))));
+  card.append(wallets);
+  if (v.refund) card.append(el("p", { className: "headline", text: v.refund }));
+  const dl = el("dl", {}, el("dt", { text: "Address" }), el("dd", { className: "mono", text: v.address }), el("dt", { text: "Kind" }), el("dd", { text: v.what }));
+  card.append(dl, el("p", { className: "sources", text: v.note }));
+  return card;
+}
+
 let latest = 0;
 async function check(raw: string): Promise<void> {
   const q = parseQuery(raw);
   if (!q) {
-    out.replaceChildren(el("p", { className: "err", text: "Paste a Zcash or Bitcoin transaction hash: 64 hexadecimal characters, optionally followed by :output." }));
+    const address = asZcashAddress(raw);
+    if (address) {
+      latest++;
+      input.value = raw.trim();
+      out.replaceChildren(renderAddress(addressView(address)));
+      return;
+    }
+    out.replaceChildren(el("p", { className: "err", text: "Paste a Zcash or Bitcoin transaction hash (64 hexadecimal characters, optionally followed by :output) or a Zcash address." }));
     return;
   }
   input.value = raw.trim();
@@ -160,8 +180,9 @@ const fromHash = (): string | null => {
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const q = parseQuery(input.value);
-  if (!q) return void check(input.value);
-  const next = `#q=${q.txid}${q.vout === undefined ? "" : `:${q.vout}`}`;
+  const address = q ? null : asZcashAddress(input.value);
+  if (!q && !address) return void check(input.value);
+  const next = q ? `#q=${q.txid}${q.vout === undefined ? "" : `:${q.vout}`}` : `#q=${encodeURIComponent(address?.address ?? "")}`;
   if (location.hash === next) void check(input.value);
   else location.hash = next;
 });

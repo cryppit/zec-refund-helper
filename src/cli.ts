@@ -3,6 +3,7 @@
 // bridge's own refund steps.
 //
 //   zec-refund <your Zcash or Bitcoin transaction hash> [--vout N] [--json]
+//   zec-refund <a Zcash address> [--json]   # can a transparent-only or a shielded wallet pay it (offline)
 //   zec-refund --board [--json]          # every open refund request on both connectors
 //   zec-refund --scan [--json] [--since YYYY-MM-DD] [--cache DIR] [--progress FILE] [--concurrency N]
 //                                        # every uncredited deposit the bridge indexer lists, checked, with totals
@@ -11,13 +12,15 @@
 // RPC. Prints the commands still to run; it never signs or sends anything.
 
 import { checkBtcDeposit, checkRefundBoard, type BtcRefundClient } from "./btc-refund.js";
+import { refundAddressNote, zcashSendAdvice } from "./core/zcash-address.js";
 import { renderBtcRefundText, renderRefundBoardText } from "./render-btc-refund.js";
+import { asZcashAddress, renderAddressText } from "./render-address.js";
 import { renderScanText } from "./render-scan.js";
 import { checkClients, INDEX_FIRST_RECORD_SEC, pacedFetch, SCAN_INTERVALS_MS, scanCandidates, walkIndexer } from "./scan.js";
 import { appendFileSync } from "node:fs";
 
 const USAGE =
-  "usage: zec-refund <your Zcash or Bitcoin transaction hash> [--vout N] [--json]\n       zec-refund --board [--json]\n       zec-refund --scan [--json] [--since YYYY-MM-DD] [--cache DIR] [--progress FILE] [--concurrency N]";
+  "usage: zec-refund <your Zcash or Bitcoin transaction hash> [--vout N] [--json]\n       zec-refund <a Zcash address> [--json]\n       zec-refund --board [--json]\n       zec-refund --scan [--json] [--since YYYY-MM-DD] [--cache DIR] [--progress FILE] [--concurrency N]";
 
 const argv = process.argv.slice(2);
 const replacer = (_k: string, v: unknown): unknown => (typeof v === "bigint" ? v.toString() : v);
@@ -46,6 +49,11 @@ async function main(): Promise<number> {
   if (!input || (vout !== undefined && (!Number.isInteger(vout) || vout < 0))) {
     console.error(USAGE);
     return 2;
+  }
+  const address = /^[0-9a-fA-F]{64}$/.test(input) ? null : asZcashAddress(input);
+  if (address) {
+    console.log(json ? JSON.stringify({ ...address, advice: zcashSendAdvice(address), refundNote: refundAddressNote(address) }, null, 2) : renderAddressText(address));
+    return 0;
   }
   const r = await checkBtcDeposit(input, clients(), nowSec(), vout);
   if ("error" in r) {

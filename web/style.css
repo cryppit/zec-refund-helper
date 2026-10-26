@@ -236,3 +236,12 @@ footer { margin-top: 56px; font-size: 14px; }
 .st.ok { box-shadow: inset 3px 0 0 var(--lime); } .st.warn { box-shadow: inset 3px 0 0 var(--amber); } .st.info { box-shadow: inset 3px 0 0 #7dd3fc; } .st.bad { box-shadow: inset 3px 0 0 var(--red); }
 
 @media (prefers-reduced-motion: reduce) { .arc, .coin { animation: none; } }
+/* The address check: one row per kind of wallet, ✓ or ✕. */
+.wallets { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 10px; }
+.wallets li { display: flex; gap: 14px; align-items: flex-start; background: rgba(5, 8, 34, 0.55); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.wallets .mark { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; }
+.wallets .yes .mark { background: rgba(221, 242, 74, 0.16); color: var(--lime); }
+.wallets .no .mark { background: rgba(255, 107, 107, 0.16); color: var(--red); }
+.wallets b { display: block; margin-bottom: 4px; }
+.wallets p { margin: 0; color: #d9dcec; }
+.card .mono, dd.mono { font-family: var(--mono); word-break: break-all; }

@@ -3,7 +3,8 @@
 import { describe, expect, it } from "vitest";
 
 import { btcDepositVerdict, refundSteps, type BoardRow, type BtcDepositFacts, type RefundConfig } from "../core/btc-refund.js";
-import { boardNotes, boardView, depositView, journeyView, parseQuery } from "./view.js";
+import { classifyZcashAddress } from "../core/zcash-address.js";
+import { addressView, boardNotes, boardView, depositView, journeyView, parseQuery } from "./view.js";
 
 const CONFIG: RefundConfig = { refundTimelockSec: 172_800, unsafeRefundTimelockSec: 1_209_600, minDepositSat: 2_500, maxGasFeeSat: 5_000, refundFeeSat: 5_000, requestDepositYocto: 2n * 10n ** 24n, executeDepositYocto: 10n ** 24n };
 const ORDER = "f3de655c605a4ca01e000e7961a969687678efaf3bd6c6dff13cea3cb50ab807";
@@ -204,5 +205,19 @@ describe("journeyView: the deposit's way, as the stops the page draws and plays"
 
   it("draws nothing for a transaction that is not a bridge deposit", () => {
     expect(journeyView(reportOf({ ...FACTS, msg: null, request: null }))).toBeNull();
+  });
+});
+
+describe("addressView", () => {
+  it("a unified address without a transparent receiver: shielded only, and the refund it can take", () => {
+    const v = addressView(classifyZcashAddress("u1r9ffm4hq7q2xcv4mwfhd0mpe0aw22klu9zxzsyr7shkx5rh77s0u3vpuc0vjchh7hvczldd8mwxgcydzyluhtd4h0zejlc5p5qzn5wn0"));
+    expect(v.title).toBe("This unified address has no transparent receiver.");
+    expect(v.tone).toBe("ok");
+    expect(v.wallets.map((w) => [w.label, w.can])).toEqual([["From a transparent-only wallet", "no"], ["From a shielded wallet", "yes"]]);
+    expect(v.refund).toMatch(/only a shielded refund/);
+  });
+
+  it("an address nobody can pay is marked bad", () => {
+    expect(addressView(classifyZcashAddress("t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU2")).tone).toBe("bad");
   });
 });

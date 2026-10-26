@@ -7,6 +7,8 @@
 
 Find a Zcash deposit that is stuck in the NEAR Omni bridge from its transaction hash, see where the ZEC is and who can
 move it, and get the bridge's own refund steps. Bitcoin deposits through the same bridge work the same way.
+Before you send ZEC, it also checks the address: whether a transparent-only or a shielded wallet can pay it
+([Before you send](#before-you-send-check-a-zcash-address)).
 
 Keyless and read-only: it never asks for, sees or holds a key, and it never signs or sends anything.
 
@@ -114,6 +116,28 @@ transparent sender. The tool says so and:
 
 `zec-refund --board` lists every refund request on both connectors, ready ones first with how long nobody has executed
 them, then locked ones, then executed ones.
+
+### Before you send: check a Zcash address
+
+Paste a Zcash address instead of a transaction hash (on the page, or `zec-refund <address>`) and the tool says, in
+plain words, whether a **transparent-only wallet** and a **shielded wallet** can pay it, and what to do next:
+
+```text
+$ pnpm zec-refund tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte
+What this means for you: This is a TEX address, so send from a transparent balance.
+  ✓ From a transparent-only wallet: Yes, if your wallet accepts TEX addresses (ZIP 320); ...
+  ✕ From a shielded wallet: No. A TEX address must only be paid from transparent funds; ...
+
+As a refund address on the Omni bridge: it can take a transparent refund, which near-cli can send.
+```
+
+It covers t-addresses, TEX (ZIP 320), unified addresses by receiver (ZIP 316), Sapling, closed Sprout addresses
+(ZIP 211), testnet addresses and typos (a failed checksum), and it says which refund the Zcash connector could pay to
+the address, so nobody names a refund address the bridge can never pay. It reads only the address itself: nothing is
+looked up or sent, on the page or in the terminal.
+
+Who asked for it: a wallet support team, replying on the Zcash forum on 26 October 2026, asked for a plain next step
+("can my user send to this?") instead of only the address type. This was added on 27 October in answer.
 
 ### How much is stuck: `--scan`
 
@@ -236,6 +260,7 @@ pnpm install
 pnpm zec-refund <your Zcash transaction hash>            # the verdict and the steps left
 pnpm zec-refund <hash> --vout 1                          # pick the output if the transaction has several
 pnpm zec-refund <hash> --json                            # machine-readable report
+pnpm zec-refund <a Zcash address>                        # can a transparent-only or a shielded wallet pay it (offline)
 pnpm zec-refund --board                                  # every open refund request, Zcash and Bitcoin
 pnpm zec-refund --scan --cache .scan --progress scan.log # every stuck deposit and the totals (long; see IMPACT.md)
 pnpm build:web                                           # the web page into web-dist/ (any static server can host it)
@@ -301,7 +326,9 @@ return the fields that source defines.
 All the code here was written during the hackathon's build window (28 September to 28 October 2026). The refund
 logic was first written between 10 and 14 October inside the Where's My Swap app of Cryppit's private monorepo, then
 moved into this repository on 13 and 14 October; the first commit says so. Only the refund code moved. Where's My
-Swap, our NEAR Intents order checker, is a separate product and not part of this entry.
+Swap, our NEAR Intents order checker, is a separate product and not part of this entry. The address check ("Before you send",
+27 October) was first written for Where's My Swap's address page on 26 October and ported here the next day, both
+inside the build window.
 
 ## Licence
 

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { blake2b, classifyZcashAddress, decodeUnifiedAddress, describeZcashAddress, f4jumble, f4jumbleInv, sha256 } from "./zcash-address.js";
+import { blake2b, classifyZcashAddress, decodeUnifiedAddress, describeZcashAddress, f4jumble, f4jumbleInv, refundAddressNote, sha256, zcashSendAdvice } from "./zcash-address.js";
 
 interface Vectors {
   unified: { p2pkh: string | null; p2sh: string | null; sapling: string | null; orchard: string | null; unknown_typecode: number | null; unknown: string | null; address: string }[];
@@ -160,6 +160,76 @@ describe("classifyZcashAddress", () => {
   it("a mistyped t-address fails its Base58Check checksum", () => {
     expect(classifyZcashAddress("t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU2")).toMatchObject({ kind: "p2pkh", valid: false, refund: { transparent: false, shielded: false } });
     expect(classifyZcashAddress("hello")).toMatchObject({ kind: "unknown", valid: false });
+  });
+});
+
+// Can a sender pay this address, from a transparent-only wallet or from a shielded balance? Added 27 Oct after a wallet
+// support team asked on the Zcash forum for a plain next step, not just the address type.
+describe("zcashSendAdvice", () => {
+  const T1 = "t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1";
+  // ZIP-320's example TEX address.
+  const TEX = "tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte";
+  const ORCHARD_ONLY = "u1r9ffm4hq7q2xcv4mwfhd0mpe0aw22klu9zxzsyr7shkx5rh77s0u3vpuc0vjchh7hvczldd8mwxgcydzyluhtd4h0zejlc5p5qzn5wn0";
+
+  it("a transparent t-address: any wallet can pay it, and a shielded sender is told the amount becomes public", () => {
+    const a = zcashSendAdvice(classifyZcashAddress(T1));
+    expect(a.next).toBe("This is a regular transparent address. Any Zcash wallet can send to it.");
+    expect(a.transparent.can).toBe("yes");
+    expect(a.shielded).toEqual({ can: "yes", why: "Yes, but the amount and this address become public on the chain." });
+  });
+
+  it("a TEX address: from transparent funds only, if the wallet reads TEX", () => {
+    const a = zcashSendAdvice(classifyZcashAddress(TEX));
+    expect(a.next).toBe("This is a TEX address, so send from a transparent balance.");
+    expect(a.transparent.can).toBe("if-supported");
+    expect(a.shielded.can).toBe("no");
+  });
+
+  it("a unified address without a transparent receiver: a transparent-only wallet can't pay it", () => {
+    const a = zcashSendAdvice(classifyZcashAddress(ORCHARD_ONLY));
+    expect(a.next).toBe("This unified address has no transparent receiver.");
+    expect(a.transparent.can).toBe("no");
+    expect(a.shielded).toEqual({ can: "yes", why: "Yes: it pays the Orchard receiver." });
+  });
+
+  it("a unified address with a transparent receiver: either wallet, if it reads unified addresses", () => {
+    const tAndOrchard = vectors.unified.find((v) => v.p2pkh && v.orchard && !v.sapling && !v.unknown)?.address ?? "";
+    const a = zcashSendAdvice(classifyZcashAddress(tAndOrchard));
+    expect(a.transparent.can).toBe("if-supported");
+    expect(a.shielded.can).toBe("yes");
+  });
+
+  it("a Sapling address: shielded wallets only", () => {
+    const sapling = vectors.unified.find((v) => v.sapling)?.sapling ?? "";
+    const a = zcashSendAdvice(classifyZcashAddress(encodeBech32ForTest("zs", bytes(sapling))));
+    expect(a.transparent.can).toBe("no");
+    expect(a.shielded.can).toBe("yes");
+  });
+
+  it("a mistyped address, a non-address and a Revision 2 address: don't send, or check in the wallet first", () => {
+    const typo = zcashSendAdvice(classifyZcashAddress("t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU2"));
+    expect(typo.next).toBe("Don't send: a character in this address is wrong (it fails its built-in check). Copy it again from the source.");
+    expect([typo.transparent.can, typo.shielded.can]).toEqual(["no", "no"]);
+    expect(zcashSendAdvice(classifyZcashAddress("hello")).next).toBe("Don't send: this is not a Zcash address. Copy it again from the source.");
+    const r2 = zcashSendAdvice(classifyZcashAddress("zu1wpmyzjrdtsw2n0kgku0pr6raf7jhwe70e45ucfcruk9qrxv59fxegvrlwmqs8uydq57re5rm79eth5hu5hzcqetl39nphtyp74qu5prrpwy8kzqlxagwz24f2c3z0939mwt3cngyfrx5nyk270q4eaj5jqdqepadhq4n6kmf0cdca58t"));
+    expect(r2.next).toMatch(/^This is a newer unified address \(Revision 2\)/);
+    expect([r2.transparent.can, r2.shielded.can]).toEqual(["if-supported", "if-supported"]);
+  });
+});
+
+describe("refundAddressNote", () => {
+  it("says which refund the Omni bridge's Zcash connector can pay to the address", () => {
+    expect(refundAddressNote(classifyZcashAddress("t1LSvEjCZBHAedhmQtqY9V4BBfP3xkqHXU1"))).toBe("As a refund address on the Omni bridge: it can take a transparent refund, which near-cli can send.");
+    expect(refundAddressNote(classifyZcashAddress("u1r9ffm4hq7q2xcv4mwfhd0mpe0aw22klu9zxzsyr7shkx5rh77s0u3vpuc0vjchh7hvczldd8mwxgcydzyluhtd4h0zejlc5p5qzn5wn0"))).toBe(
+      "As a refund address on the Omni bridge: it can take only a shielded refund, which bridge-cli builds. It lands in the Ironwood pool.",
+    );
+    const tAndOrchard = vectors.unified.find((v) => v.p2pkh && v.orchard && !v.sapling && !v.unknown)?.address ?? "";
+    expect(refundAddressNote(classifyZcashAddress(tAndOrchard))).toBe("As a refund address on the Omni bridge: it can take a shielded refund (bridge-cli, the default) or a transparent one.");
+    const sapling = vectors.unified.find((v) => v.sapling)?.sapling ?? "";
+    expect(refundAddressNote(classifyZcashAddress(encodeBech32ForTest("zs", bytes(sapling))))).toBe(
+      "As a refund address on the Omni bridge: don't use it. The Zcash connector pays only a transparent or an Orchard receiver, and this address has neither, so a refund to it could never be executed.",
+    );
+    expect(refundAddressNote(classifyZcashAddress("hello"))).toBeNull();
   });
 });
 

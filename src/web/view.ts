@@ -3,6 +3,8 @@
 import type { BtcDepositReport } from "../btc-refund.js";
 import { lockYears, unreachableLock, UTXO_CHAINS, type BoardRow, type BtcDepositVerdict, type RefundStep, type UtxoChain } from "../core/btc-refund.js";
 import { describeDuration } from "../core/duration.js";
+import { describeZcashAddress, refundAddressNote, zcashSendAdvice, type SendAnswer, type ZcashAddressInfo } from "../core/zcash-address.js";
+import { OFFLINE_NOTE } from "../render-address.js";
 import { BOARD_LOCK_WHY, boardLockYears, fromWhom, headline, NEAR_CLI_TIMEOUT_NOTE, privacyLines, requestLockSec, sourcesLine, stepsIntro } from "../render-btc-refund.js";
 
 type Report = Exclude<BtcDepositReport, { error: string }>;
@@ -198,4 +200,33 @@ export function journeyView(r: Report): JourneyStop[] | null {
     case "refunded":
       return refund({ title: "Refund requested", note: "The request is on chain", state: "done" }, { title: "Lock", note: "Passed", state: "done" }, { title: "Execute", note: "Executed", state: "done" }, { title: "Back to the sender", note: `Returned to ${v.refundTo.slice(0, 12)}…`, state: "done" });
   }
+}
+
+export interface AddressView {
+  address: string;
+  /** The technical name ("a TEX address (ZIP-320, transparent-only)"). */
+  what: string;
+  title: string;
+  tone: Tone;
+  wallets: { label: string; can: SendAnswer["can"]; why: string }[];
+  refund: string | null;
+  note: string;
+}
+
+/** A Zcash address checked before sending, with the CLI's own words (render-address). */
+export function addressView(a: ZcashAddressInfo): AddressView {
+  const advice = zcashSendAdvice(a);
+  const none = advice.transparent.can === "no" && advice.shielded.can === "no";
+  return {
+    address: a.address,
+    what: describeZcashAddress(a),
+    title: advice.next,
+    tone: a.unsupported ? "info" : none ? "bad" : "ok",
+    wallets: [
+      { label: "From a transparent-only wallet", ...advice.transparent },
+      { label: "From a shielded wallet", ...advice.shielded },
+    ],
+    refund: refundAddressNote(a),
+    note: OFFLINE_NOTE,
+  };
 }
