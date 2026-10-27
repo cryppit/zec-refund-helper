@@ -63,24 +63,52 @@
 
   <section class="tool panel" id="check">
     <div class="tool-head">
-      <p class="eyebrow"><span class="mode-coins" aria-hidden="true"><img src="logos/btc.svg" alt="" width="20" height="20"><img src="logos/zec.svg" alt="" width="20" height="20"></span>Stuck deposit</p>
+      <p class="eyebrow">Stuck deposit</p>
       <h2>Investigate a deposit</h2>
     </div>
     <div class="tool-body">
-      <form id="form" autocomplete="off">
-        <label for="q">Zcash or Bitcoin transaction hash</label>
-        <input id="q" spellcheck="false" placeholder="64 hex characters, from your wallet">
-        <button type="submit">Check deposit →</button>
-        <p class="hint">Supports BTC and ZEC deposits to the Omni bridge. Your browser asks the public services named below directly, so they see your IP address; use a VPN you trust or Tor Browser to hide it (some Tor exits are refused: try a new circuit).</p>
-      </form>
-      <div>
-        <h3>Real lookups</h3>
+      <div class="tool-main">
+        <form id="form" autocomplete="off">
+          <label for="q">Zcash or Bitcoin transaction hash</label>
+          <input id="q" spellcheck="false" placeholder="64 hex characters, from your wallet">
+          <button type="submit">Check deposit →</button>
+          <p class="hint">Supports BTC and ZEC deposits to the Omni bridge. Your browser asks the public services named below directly, so they see your IP address; use a VPN you trust or Tor Browser to hide it (some Tor exits are refused: try a new circuit).</p>
+        </form>
+        <p class="pills-label">Real lookups</p>
         <ul class="examples">
-            <li><a href="#q=9deffb31135e3cdf6a62088d8639166673fe91c0e150fd9c80f6e61bba2bec39"><img src="logos/btc.svg" alt="" width="22" height="22"><span class="ex-id">9deffb31…</span><span>0.1 BTC</span><span class="ex-tag ok">Refunded 15 Oct</span></a></li>
-            <li><a href="#q=04dc643f8a1d19baf476178d01eac8fc553700e36f849df91e46924fa3f2cae6"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">04dc643f…</span><span>50 ZEC</span><span class="ex-tag">Shielded pool</span></a></li>
-            <li><a href="#q=6de202d64d2b7c04154ed73f892c7dd7f288d440bde80d39059d2341fd9abadc"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">6de202d6…</span><span>ZEC</span><span class="ex-tag">Credited</span></a></li>
-          </ul>
+          <li><a href="#q=9deffb31135e3cdf6a62088d8639166673fe91c0e150fd9c80f6e61bba2bec39"><img src="logos/btc.svg" alt="" width="22" height="22"><span class="ex-id">9deffb31…</span><span>0.1 BTC</span><span class="ex-tag ok">Refunded 15 Oct</span></a></li>
+          <li><a href="#q=04dc643f8a1d19baf476178d01eac8fc553700e36f849df91e46924fa3f2cae6"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">04dc643f…</span><span>50 ZEC</span><span class="ex-tag">From the shielded pool</span></a></li>
+          <li><a href="#q=6de202d64d2b7c04154ed73f892c7dd7f288d440bde80d39059d2341fd9abadc"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">6de202d6…</span><span>0.41 ZEC</span><span class="ex-tag">Credited</span></a></li>
+        </ul>
+        <p class="pills-label">Every answer includes</p>
+        <ul class="gets">
+          <li><b>Where it stands</b><span>One of seven states, read from the chain and the bridge contract</span></li>
+          <li><b>Its path</b><span>Each stop from your chain to NEAR and back, done or not</span></li>
+          <li><b>The calls left</b><span>The exact commands and what each costs; you sign them</span></li>
+          <li><b>What others see</b><span>Which parts of the deposit are public and which are hidden</span></li>
+        </ul>
       </div>
+
+      <figure class="ill" aria-label="How an answer reads">
+        <div class="ill-head"><span class="eyebrow">How an answer reads</span><span class="ill-tag">Examples</span></div>
+        <a class="ill-card" href="#q=04dc643f8a1d19baf476178d01eac8fc553700e36f849df91e46924fa3f2cae6">
+          <span class="ill-top"><img src="logos/zec.svg" alt="" width="26" height="26"><code>04dc643f…</code><span class="ill-chip">Credited</span></span>
+          <span class="ill-title">Credited: the bridge took it in, nothing to do.</span>
+          <span class="ill-row yes"><span aria-hidden="true">✓</span>50 ZEC confirmed on Zcash, 13 October</span>
+          <span class="ill-row yes"><span aria-hidden="true">✓</span>Credited to its NEAR account</span>
+          <span class="ill-refund"><img src="logos/zec.svg" alt="" width="20" height="20">Sender hidden: it came from the Ironwood shielded pool</span>
+          <span class="ill-open">Open this check →</span>
+        </a>
+        <div class="ill-card warn">
+          <span class="ill-top"><img src="logos/zec.svg" alt="" width="26" height="26"><code>a stuck deposit</code><span class="ill-chip warn">Stuck · refundable</span></span>
+          <span class="ill-title">Never credited, so you can ask for it back.</span>
+          <span class="ill-row yes"><span aria-hidden="true">✓</span>Confirmed on its own chain</span>
+          <span class="ill-row hold"><span aria-hidden="true">!</span>Not credited on NEAR</span>
+          <span class="ill-row next"><span aria-hidden="true">→</span>Request the refund, wait out the lock, execute</span>
+          <span class="ill-refund"><img src="logos/near.svg" alt="" width="20" height="20">Only to the address the bridge allows, shielded when it can take it</span>
+        </div>
+        <figcaption>Every answer says what to do next, with each call and its cost.</figcaption>
+      </figure>
     </div>
   </section>
 
