@@ -80,7 +80,9 @@ describe("renderBtcRefundText", () => {
     expect(credited).toContain(`CREDITED  the bridge took this deposit in; its NEAR order account is ${ORDER}.`);
     expect(notOmni).toContain("NOT AN OMNI BTC DEPOSIT");
     expect(notOmni).toContain("A deposit through the PoA bridge is not covered here.");
-    for (const text of [credited, notOmni]) expect(text).not.toMatch(/Where's My Swap|wheres-my-swap|higgsfield/i);
+    // Any link in them goes to a public explorer, never to another site.
+    const hosts = (t: string): string[] => [...t.matchAll(/https?:\/\/([^/\s)]+)/g)].map((m) => m[1] ?? "");
+    for (const text of [credited, notOmni]) for (const h of hosts(text)) expect(["mempool.space", "nearblocks.io", "blockchair.com"]).toContain(h);
   });
 
   it("says what others can see about a Bitcoin deposit: all of it, since Bitcoin has no shielded pool", () => {

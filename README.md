@@ -324,11 +324,10 @@ return the fields that source defines.
 ## Built for ZECATHON 2026
 
 All the code here was written during the hackathon's build window (28 September to 28 October 2026). The refund
-logic was first written between 10 and 14 October inside the Where's My Swap app of Cryppit's private monorepo, then
-moved into this repository on 13 and 14 October; the first commit says so. Only the refund code moved. Where's My
-Swap, our NEAR Intents order checker, is a separate product and not part of this entry. The address check ("Before you send",
-27 October) was first written for Where's My Swap's address page on 26 October and ported here the next day, both
-inside the build window.
+logic was first written between 10 and 14 October in Cryppit's private monorepo and moved into this repository on 13
+and 14 October; the address check ("Before you send") was first written there on 26 October and moved here on 27
+October. This repository is the whole entry: the page and the CLI build and run from it alone, with no other Cryppit
+service behind them.
 
 ## Licence
 

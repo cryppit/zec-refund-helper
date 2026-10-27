@@ -63,7 +63,7 @@ describe("depositView", () => {
       { label: "Confirmed", value: "2026-08-19 17:19 UTC", href: null },
       { label: "For NEAR account", value: ORDER, href: `https://nearblocks.io/address/${ORDER}` },
     ]);
-    for (const f of v.facts) if (f.href) expect(f.href).not.toContain("wheres-my-swap");
+    for (const f of v.facts) if (f.href) expect(new URL(f.href).hostname).toMatch(/^(mempool\.space|nearblocks\.io|blockchair\.com)$/);
   });
 
   it("carries the CLI's own headline, steps and sources", () => {
@@ -99,7 +99,7 @@ describe("depositView", () => {
     expect(credited.headline).toEqual([`CREDITED  the bridge took this deposit in; its NEAR order account is ${ORDER}.`]);
     const notOmni = depositView(reportOf({ ...FACTS, msg: null, request: null }));
     expect(notOmni.title).toBe("Not an Omni bridge deposit");
-    expect(notOmni.headline.join(" ")).not.toContain("Where's My Swap");
+    expect(notOmni.headline.join(" ")).not.toMatch(/https?:\/\//);
     expect(notOmni.headline.join(" ")).toContain("A deposit through the PoA bridge is not covered here.");
   });
 
