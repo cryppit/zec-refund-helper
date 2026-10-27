@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src https:; img-src 'self' data:; media-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Check a Zcash address · Zcash Refund Helper</title>
+<meta name="description" content="Paste a Zcash address before you send: whether a transparent-only or a shielded wallet can pay it, what to do next, and which refund the Omni bridge could make to it. Read from the address itself, offline.">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Check a Zcash address before you send">
+<meta property="og:description" content="Whether a transparent-only or a shielded wallet can pay it, and which refund the Omni bridge could make to it. Offline, by Cryppit.">
+<meta property="og:url" content="https://cryppit.github.io/zec-refund-helper/address.html">
+<meta property="og:image" content="https://cryppit.github.io/zec-refund-helper/icons/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#04061a">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="address.js"></script>
+</head>
+<body>
+<nav class="top" aria-label="Site">
+  <a class="brand" href="./"><img src="logos/zec.svg" alt="" width="30" height="30"><span>Zcash Refund Helper</span></a>
+  <span class="top-links"><a href="./#check">Check a deposit</a><a href="address.html" aria-current="page">Check an address</a><a href="#kinds">Address kinds</a><a href="#refunds">Refunds</a><a href="./#demo">Demo</a></span>
+  <a class="gh" href="https://github.com/cryppit/zec-refund-helper" target="_blank" rel="noopener noreferrer">GitHub</a>
+</nav>
+
+<main id="top">
+  <section class="hero addr-hero">
+    <div class="hero-copy">
+      <p class="chip"><span>✓</span> Offline · nothing is looked up or sent</p>
+      <h1>Sending ZEC? <span class="hl">Check the address first.</span></h1>
+      <p class="lede">Zcash has several kinds of address, and not every wallet can pay every kind. Paste one to see whether a transparent-only or a shielded wallet can send to it, what to do next, and which refund the Omni bridge could make to it. It also catches typos before they cost you.</p>
+
+      <form id="form" class="addr-form panel" autocomplete="off">
+        <label for="q">Zcash address</label>
+        <input id="q" spellcheck="false" placeholder="t1…, t3…, tex1…, u1… or zs1…">
+        <button type="submit">Check address →</button>
+      </form>
+
+      <p class="pills-label">Try one</p>
+      <ul class="kind-pills" aria-label="Example addresses">
+        <li><a href="#a=t1Hsc1LR8yKnbbe3twRp88p6vFfC5t7DLbs"><img src="logos/zec.svg" alt="" width="20" height="20">Transparent</a></li>
+        <li><a href="#a=tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte"><img src="logos/zec.svg" alt="" width="20" height="20">TEX</a></li>
+        <li><a href="#a=u1snf9yr883aj2hm8pksp9aymnqdwzy42rpzuffevj35hhxeckays5pcpeq7vy2mtgzlcuc4mnh9443qnuyje0yx6h59angywka4v2ap6kchh2j96ezf9w0c0auyz3wwts2lx5gmk2sk9"><img src="logos/zec.svg" alt="" width="20" height="20">Unified</a></li>
+        <li><a href="#a=u1ddnjsdcpm36r6aq79n3s68shjweksnmwtdltrh046s8m6xcws9ygyawalxx8n6hg6vegk0wh8zjnafxgh6msppjsljvyt0ynece3lvm0"><img src="logos/zec.svg" alt="" width="20" height="20">Unified, shielded only</a></li>
+        <li><a href="#a=zs1z7rejlpsa98s2rrrfkwmaxu53e4ue0ulcrw0h4x5g8jl04tak0d3mm47vdtahatqrlkngh9slya"><img src="logos/zec.svg" alt="" width="20" height="20">Sapling</a></li>
+        <li><a class="bad" href="#a=tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgtf"><img src="logos/zec.svg" alt="" width="20" height="20">A typo</a></li>
+      </ul>
+    </div>
+
+    <figure class="ill" aria-label="How an answer reads: an illustration">
+      <div class="ill-head"><span class="eyebrow">How an answer reads</span><span class="ill-tag">Illustration</span></div>
+      <div class="ill-card">
+        <p class="ill-top"><img src="logos/zec.svg" alt="" width="26" height="26"><code>tex1s2rt…khdgte</code><span class="ill-chip">TEX · valid</span></p>
+        <p class="ill-title">This is a TEX address, so send from a transparent balance.</p>
+        <p class="ill-row yes"><span aria-hidden="true">✓</span>From a transparent-only wallet</p>
+        <p class="ill-row no"><span aria-hidden="true">✕</span>From a shielded wallet</p>
+        <p class="ill-refund"><img src="logos/near.svg" alt="" width="20" height="20">Omni refund: transparent, sent with near-cli</p>
+      </div>
+      <div class="ill-card stop">
+        <p class="ill-top"><img src="logos/zec.svg" alt="" width="26" height="26"><code>tex1s2rt…khdgtf</code><span class="ill-chip bad">Typo</span></p>
+        <p class="ill-title">Don't send: a character in this address is wrong.</p>
+        <p class="ill-sub">It fails its built-in check. Copy it again from the source.</p>
+      </div>
+      <figcaption>Every answer says what to do next, not just what the address is.</figcaption>
+    </figure>
+  </section>
+
+  <section id="out" aria-live="polite"></section>
+
+  <section class="kinds" id="kinds">
+    <h2>Every kind of Zcash address</h2>
+    <p class="muted">The prefix tells you the kind; the checksum tells you whether it was copied right. This is what the check answers for each.</p>
+    <div class="kind-table" role="table" aria-label="Zcash address kinds">
+      <div class="kt-row kt-head" role="row">
+        <span role="columnheader">Starts with</span>
+        <span role="columnheader">What it is</span>
+        <span role="columnheader">Transparent-only wallet</span>
+        <span role="columnheader">Shielded wallet</span>
+        <span role="columnheader">As an Omni refund address</span>
+      </div>
+      <div class="kt-row" role="row">
+        <span role="cell" class="kt-prefix"><code>t1</code> <code>t3</code></span>
+        <span role="cell"><b>Transparent</b><small>Public, like a Bitcoin address</small></span>
+        <span role="cell" class="yes">✓ Yes</span>
+        <span role="cell" class="yes">✓ Yes, but the amount and address become public</span>
+        <span role="cell" class="yes">Transparent refund (near-cli)</span>
+      </div>
+      <div class="kt-row" role="row">
+        <span role="cell" class="kt-prefix"><code>tex1</code></span>
+        <span role="cell"><b>TEX</b><small>Transparent-only, ZIP 320; used by some exchanges</small></span>
+        <span role="cell" class="maybe">✓ If your wallet accepts TEX</span>
+        <span role="cell" class="no">✕ Only from transparent funds</span>
+        <span role="cell" class="yes">Transparent refund (near-cli)</span>
+      </div>
+      <div class="kt-row" role="row">
+        <span role="cell" class="kt-prefix"><code>u1</code></span>
+        <span role="cell"><b>Unified, with a transparent receiver</b><small>One address holding several receivers, ZIP 316</small></span>
+        <span role="cell" class="maybe">✓ If your wallet reads unified addresses</span>
+        <span role="cell" class="yes">✓ Pays the Orchard or Sapling receiver</span>
+        <span role="cell" class="yes">Transparent, or shielded if it has an Orchard receiver</span>
+      </div>
+      <div class="kt-row" role="row">
+        <span role="cell" class="kt-prefix"><code>u1</code></span>
+        <span role="cell"><b>Unified, shielded only</b><small>No transparent receiver inside</small></span>
+        <span role="cell" class="no">✕ Ask for a t-address</span>
+        <span role="cell" class="yes">✓ Yes</span>
+        <span role="cell" class="maybe">Shielded only, if it has an Orchard receiver</span>
+      </div>
+      <div class="kt-row" role="row">
+        <span role="cell" class="kt-prefix"><code>zs1</code></span>
+        <span role="cell"><b>Sapling</b><small>The older shielded pool</small></span>
+        <span role="cell" class="no">✕ Ask for a t-address</span>
+        <span role="cell" class="yes">✓ If your wallet supports Sapling</span>
+        <span role="cell" class="no">Don't use: the bridge can't pay it</span>
+      </div>
+      <div class="kt-row" role="row">
+        <span role="cell" class="kt-prefix"><code>zc</code></span>
+        <span role="cell"><b>Sprout</b><small>Closed to new funds since 2020, ZIP 211</small></span>
+        <span role="cell" class="no">✕ Don't send</span>
+        <span role="cell" class="no">✕ Don't send</span>
+        <span role="cell" class="no">Don't use</span>
+      </div>
+    </div>
+    <p class="muted small-note">Testnet addresses (<code>tm</code>, <code>t2</code>, <code>textest1</code>, <code>utest1</code>, <code>ztestsapling1</code>) are recognised and flagged: real ZEC sent to them is lost. Newer Revision 2 unified addresses are recognised but not yet read, so the check tells you to let your wallet decide.</p>
+  </section>
+
+  <section class="refunds" id="refunds">
+    <div class="refunds-copy">
+      <p class="eyebrow">On the Omni bridge</p>
+      <h2>Which refund an address can take</h2>
+      <p class="muted">A ZEC deposit the bridge never credits can be refunded to the refund address its sender named. The Zcash connector pays only two kinds of receiver, so the address decides which refund is possible.</p>
+      <a class="btn lime-btn" href="./#check">Check a stuck deposit →</a>
+    </div>
+    <ul class="paths">
+      <li class="path ok">
+        <span class="path-coins" aria-hidden="true"><img src="logos/near.svg" alt="" width="26" height="26"><img src="logos/zec.svg" alt="" width="26" height="26"></span>
+        <div><b>Shielded refund</b><p>To an Orchard receiver. bridge-cli builds it, and it is the default. Since NU6.3 it lands in the Ironwood pool, where your wallet reads it like any shielded note.</p></div>
+      </li>
+      <li class="path ok">
+        <span class="path-coins" aria-hidden="true"><img src="logos/near.svg" alt="" width="26" height="26"><img src="logos/zec.svg" alt="" width="26" height="26"></span>
+        <div><b>Transparent refund</b><p>To a t-address, a TEX address or a unified address's transparent receiver. near-cli can send the call.</p></div>
+      </li>
+      <li class="path bad">
+        <span class="path-coins" aria-hidden="true"><img src="logos/near.svg" alt="" width="26" height="26"><img src="logos/zec.svg" alt="" width="26" height="26"></span>
+        <div><b>Neither</b><p>A Sapling address, or a unified address with only a Sapling receiver. A refund to it could never be executed, so don't name it as a refund address.</p></div>
+      </li>
+    </ul>
+  </section>
+
+  <section class="mistakes">
+    <h2>What it catches before you send</h2>
+    <ul class="state-grid mistake-grid">
+      <li class="st bad"><b>A typo</b><span>Every Zcash address carries a checksum. One wrong or missing character fails it, and the check says don't send.</span></li>
+      <li class="st warn"><b>Shielded money to a TEX address</b><span>A TEX address must be paid from transparent funds. A shielded wallet has to move the ZEC to a transparent address first.</span></li>
+      <li class="st warn"><b>A shielded address for a transparent wallet</b><span>A transparent-only wallet can't pay a Sapling address or a shielded-only unified address. Ask for a t-address.</span></li>
+      <li class="st bad"><b>A testnet or Sprout address</b><span>Testnet addresses take no real ZEC, and Sprout has accepted no new funds since 2020.</span></li>
+      <li class="st info"><b>Not a Zcash address at all</b><span>A Bitcoin or Ethereum address pasted by mistake is rejected, not guessed at.</span></li>
+    </ul>
+  </section>
+
+  <section class="features">
+    <article class="feat art-a">
+      <span class="fx" aria-hidden="true"><img src="logos/zec.svg" alt="" width="34" height="34"></span>
+      <h3>Decoded from scratch</h3>
+      <p>Unified addresses are decoded per ZIP 316, including the F4Jumble step, and tested on the official test vectors. TEX addresses follow ZIP 320.</p>
+      <p class="tags"><span>ZIP 316</span><span>ZIP 320</span><span>Bech32m</span><span>Base58Check</span></p>
+    </article>
+    <article class="feat art-b">
+      <span class="fx fx-s" aria-hidden="true"></span>
+      <h3>Offline and private</h3>
+      <p>The address is read in your browser. Nothing is looked up or sent anywhere, so the check works with no connection and nobody learns which address you checked.</p>
+      <p class="tags"><span>No network</span><span>No keys</span><span>No server</span></p>
+    </article>
+    <article class="feat art-c">
+      <span class="fx fx-o" aria-hidden="true"></span>
+      <h3>Also in your terminal</h3>
+      <p>The same check runs from the command line, with the same words:</p>
+      <pre class="cli">pnpm zec-refund &lt;a Zcash address&gt;</pre>
+      <p class="tags"><span>MIT</span><span>233 tests</span></p>
+    </article>
+  </section>
+
+  <footer>
+    <p>Open source (MIT): <a href="https://github.com/cryppit/zec-refund-helper" target="_blank" rel="noopener noreferrer">github.com/cryppit/zec-refund-helper</a> · by Cryppit · <a href="./">Check a stuck deposit</a></p>
+    <p class="muted">The address check reads only the address you paste, in your browser; nothing is looked up, sent or stored. Independent project, not affiliated with NEAR, the Omni bridge or the Zcash organisations. It never holds keys or signs anything. Chain logos: web3icons (MIT).</p>
+  </footer>
+</main>
+</body>
+</html>

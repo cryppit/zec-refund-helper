@@ -119,8 +119,8 @@ them, then locked ones, then executed ones.
 
 ### Before you send: check a Zcash address
 
-Paste a Zcash address instead of a transaction hash (on the page, or `zec-refund <address>`) and the tool says, in
-plain words, whether a **transparent-only wallet** and a **shielded wallet** can pay it, and what to do next:
+Paste a Zcash address on the [address page](https://cryppit.github.io/zec-refund-helper/address.html), or run
+`zec-refund <address>`, and the tool says, in plain words, whether a **transparent-only wallet** and a **shielded wallet** can pay it, and what to do next:
 
 ```text
 $ pnpm zec-refund tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte

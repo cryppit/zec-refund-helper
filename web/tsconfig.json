@@ -4,5 +4,5 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": []
   },
-  "include": ["main.ts", "../src/web/view.ts", "../src/btc-refund.ts"]
+  "include": ["main.ts", "address.ts", "ui.ts", "../src/web/view.ts", "../src/btc-refund.ts"]
 }
