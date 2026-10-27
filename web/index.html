@@ -25,7 +25,7 @@
 <body>
 <nav class="top" aria-label="Site">
   <a class="brand" href="#top"><img src="logos/zec.svg" alt="" width="30" height="30"><span>Zcash Refund Helper</span></a>
-  <span class="top-links"><a href="#check">Check a deposit</a><a href="#address">Check an address</a><a href="#how">How it works</a><a href="#board-wrap">Open refunds</a><a href="#demo">Demo</a></span>
+  <span class="top-links"><a href="#check">Check</a><a href="#how">How it works</a><a href="#board-wrap">Open refunds</a><a href="#demo">Demo</a></span>
   <a class="gh" href="https://github.com/cryppit/zec-refund-helper" target="_blank" rel="noopener noreferrer">GitHub</a>
 </nav>
 
@@ -35,8 +35,8 @@
       <p class="chip"><span>‹/›</span> Open source · MIT · Read-only</p>
       <h1>Zcash Refund <span class="hl">Helper</span></h1>
       <p class="tagline">Investigate. Verify. Recover.</p>
-      <p class="lede">Paste the hash of a Zcash or Bitcoin deposit stuck in the NEAR Omni bridge. You get where it stands, read from the chain and the bridge contract, and the bridge's own refund steps back to your address, shielded when your address can take it. About to send ZEC? Check the address first.</p>
-      <p class="ctas"><a class="btn lime-btn" href="#check">Check a deposit →</a><a class="btn ghost-btn" href="#address">Check a Zcash address</a></p>
+      <p class="lede">Paste the hash of a Zcash or Bitcoin deposit stuck in the NEAR Omni bridge. You get where it stands, read from the chain and the bridge contract, and the bridge's own refund steps back to your address, shielded when your address can take it. Sending ZEC? The same box checks the address first.</p>
+      <p class="ctas"><a class="btn lime-btn" href="#check">Check a deposit →</a><a class="btn ghost-btn" href="#demo">Watch the demo</a></p>
       <dl class="stats">
         <div><dt>0 keys</dt><dd>held or asked for</dd></div>
         <div><dt>MIT</dt><dd>open source</dd></div>
@@ -61,40 +61,37 @@
 
   </section>
 
-  <section class="tools" id="check">
-    <aside class="panel">
-      <p class="eyebrow">Stuck deposit</p>
-      <h2>Investigate a deposit</h2>
+  <section class="tool panel" id="check">
+    <div class="modes" role="tablist" aria-label="What to check">
+      <button type="button" role="tab" class="mode" id="tab-deposit" data-mode="deposit" aria-controls="pane-deposit" aria-selected="true"><span class="mode-coins" aria-hidden="true"><img src="logos/btc.svg" alt="" width="20" height="20"><img src="logos/zec.svg" alt="" width="20" height="20"></span><span>Stuck deposit</span></button>
+      <button type="button" role="tab" class="mode" id="tab-address" data-mode="address" aria-controls="pane-address" aria-selected="false" tabindex="-1"><span class="mode-coins" aria-hidden="true"><img src="logos/zec.svg" alt="" width="20" height="20"></span><span>Before you send<span class="wide"> ZEC</span></span></button>
+    </div>
+    <div class="tool-body">
       <form id="form" autocomplete="off">
-        <label for="q">Zcash or Bitcoin transaction hash</label>
+        <label for="q" id="q-label">Zcash or Bitcoin transaction hash</label>
         <input id="q" spellcheck="false" placeholder="64 hex characters, from your wallet">
-        <button type="submit">Check deposit →</button>
+        <button type="submit" id="q-go">Check deposit →</button>
+        <p class="hint" id="q-hint">Supports BTC and ZEC deposits to the Omni bridge. Your browser asks the public services named below directly, so they see your IP address; use a VPN you trust or Tor Browser to hide it (some Tor exits are refused: try a new circuit).</p>
       </form>
-      <p class="hint">Supports BTC and ZEC deposits to the Omni bridge. Your browser asks the public services named below directly, so they see your IP address; use a VPN you trust or Tor Browser to hide it (some Tor exits are refused: try a new circuit).</p>
-      <h3>Real lookups</h3>
-      <ul class="examples">
-        <li><a href="#q=9deffb31135e3cdf6a62088d8639166673fe91c0e150fd9c80f6e61bba2bec39"><img src="logos/btc.svg" alt="" width="22" height="22"><span class="ex-id">9deffb31…</span><span>0.1 BTC</span><span class="ex-tag ok">Refunded 15 Oct</span></a></li>
-        <li><a href="#q=04dc643f8a1d19baf476178d01eac8fc553700e36f849df91e46924fa3f2cae6"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">04dc643f…</span><span>50 ZEC</span><span class="ex-tag">Shielded pool</span></a></li>
-        <li><a href="#q=6de202d64d2b7c04154ed73f892c7dd7f288d440bde80d39059d2341fd9abadc"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">6de202d6…</span><span>ZEC</span><span class="ex-tag">Credited</span></a></li>
-      </ul>
-    </aside>
-
-    <aside class="panel" id="address">
-      <p class="eyebrow">Before you send ZEC</p>
-      <h2>Check a Zcash address</h2>
-      <form id="aform" autocomplete="off">
-        <label for="aq">Zcash address</label>
-        <input id="aq" spellcheck="false" placeholder="t1…, tex1…, u1… or zs1…">
-        <button type="submit">Check address →</button>
-      </form>
-      <p class="hint">Says whether a transparent-only or a shielded wallet can pay it, what to do next, and which refund the bridge could make to it. Read from the address itself: nothing is looked up or sent, so it works offline.</p>
-      <h3>Try one</h3>
-      <ul class="examples">
-        <li><a href="#a=tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">tex1s2rt…</span><span>TEX</span><span class="ex-tag">Transparent only</span></a></li>
-        <li><a href="#a=u1snf9yr883aj2hm8pksp9aymnqdwzy42rpzuffevj35hhxeckays5pcpeq7vy2mtgzlcuc4mnh9443qnuyje0yx6h59angywka4v2ap6kchh2j96ezf9w0c0auyz3wwts2lx5gmk2sk9"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">u1snf9yr…</span><span>Unified</span><span class="ex-tag ok">Either wallet</span></a></li>
-        <li><a href="#a=tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgtf"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">tex1s2rt…gtf</span><span>Typo</span><span class="ex-tag bad">Don't send</span></a></li>
-      </ul>
-    </aside>
+      <div class="panes">
+        <div class="pane" id="pane-deposit" role="tabpanel" aria-labelledby="tab-deposit">
+          <h3>Real lookups</h3>
+          <ul class="examples">
+            <li><a href="#q=9deffb31135e3cdf6a62088d8639166673fe91c0e150fd9c80f6e61bba2bec39"><img src="logos/btc.svg" alt="" width="22" height="22"><span class="ex-id">9deffb31…</span><span>0.1 BTC</span><span class="ex-tag ok">Refunded 15 Oct</span></a></li>
+            <li><a href="#q=04dc643f8a1d19baf476178d01eac8fc553700e36f849df91e46924fa3f2cae6"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">04dc643f…</span><span>50 ZEC</span><span class="ex-tag">Shielded pool</span></a></li>
+            <li><a href="#q=6de202d64d2b7c04154ed73f892c7dd7f288d440bde80d39059d2341fd9abadc"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">6de202d6…</span><span>ZEC</span><span class="ex-tag">Credited</span></a></li>
+          </ul>
+        </div>
+        <div class="pane" id="pane-address" role="tabpanel" aria-labelledby="tab-address" hidden>
+          <h3>Try one</h3>
+          <ul class="examples">
+            <li><a href="#a=tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">tex1s2rt…</span><span>TEX</span><span class="ex-tag">Transparent only</span></a></li>
+            <li><a href="#a=u1snf9yr883aj2hm8pksp9aymnqdwzy42rpzuffevj35hhxeckays5pcpeq7vy2mtgzlcuc4mnh9443qnuyje0yx6h59angywka4v2ap6kchh2j96ezf9w0c0auyz3wwts2lx5gmk2sk9"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">u1snf9yr…</span><span>Unified</span><span class="ex-tag ok">Either wallet</span></a></li>
+            <li><a href="#a=tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgtf"><img src="logos/zec.svg" alt="" width="22" height="22"><span class="ex-id">tex1s2rt…gtf</span><span>Typo</span><span class="ex-tag bad">Don't send</span></a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </section>
 
   <section id="out" aria-live="polite"></section>
@@ -110,6 +107,15 @@
         <li><span class="fi i-steps" aria-hidden="true"></span><b>4. Steps</b><span>the exact calls left, what each costs, signed by you</span></li>
         <li><span class="fi i-home" aria-hidden="true"></span><b>5. Back home</b><span>only to the refund address the bridge allows</span></li>
       </ol>
+      <h3 class="sub">What it tells apart</h3>
+      <p class="muted">Every deposit gets one of these, from the chain and the bridge contract.</p>
+      <ul class="state-grid">
+        <li class="st ok"><b>Credited</b><span>The bridge took it in; nothing to do.</span></li>
+        <li class="st warn"><b>Stuck, refundable</b><span>Never credited; the refund path is open.</span></li>
+        <li class="st info"><b>Requested or ready</b><span>Waiting out the lock, or anyone can execute.</span></li>
+        <li class="st ok"><b>Refunded</b><span>Back at the refund address.</span></li>
+        <li class="st bad"><b>Not recoverable</b><span>Below the minimum, a placeholder address, too old, or the 100-year lock.</span></li>
+      </ul>
     </div>
     <div class="result-card">
       <p class="eyebrow">A real result</p>
@@ -125,7 +131,7 @@
       <span class="fx" aria-hidden="true"><img src="logos/zec.svg" alt="" width="34" height="34"></span>
       <h3>Zcash-native</h3>
       <p>Unified addresses decoded from scratch per ZIP-316 and tested on the official vectors; TEX addresses per ZIP-320. A refund to an Orchard receiver goes back shielded.</p>
-      <p class="tags"><span>Unified addresses</span><span>TEX</span><span>Orchard refunds</span><span>Sapling warning</span></p>
+      <p class="tags"><span>ZIP-316</span><span>ZIP-320</span><span>Orchard refunds</span><span>Sapling warning</span></p>
     </article>
     <article class="feat art-b">
       <span class="fx fx-c" aria-hidden="true"></span>
@@ -134,23 +140,11 @@
       <p class="tags"><span>Eligibility</span><span>Exact calls</span><span>Fees shown</span><span>Lock times</span></p>
     </article>
     <article class="feat art-c">
-      <span class="fx fx-o" aria-hidden="true"></span>
-      <h3>Open source &amp; keyless</h3>
-      <p>MIT licensed and read-only: no wallet, no keys, no server of ours. Lookups go from your browser straight to public APIs, and nothing is stored.</p>
-      <p class="tags"><span>MIT</span><span>No keys</span><span>No server</span><span>233 tests</span></p>
+      <span class="fx fx-s" aria-hidden="true"></span>
+      <h3>Check before you send</h3>
+      <p>Paste a Zcash address: it says whether a transparent-only or a shielded wallet can pay it, and which refund the bridge could make to it. Read from the address itself, offline.</p>
+      <p class="tags"><span>Transparent or shielded</span><span>Typos caught</span><span>Offline</span></p>
     </article>
-  </section>
-
-  <section class="states">
-    <h2>What it tells apart</h2>
-    <p class="muted">Every deposit gets one of these, from the chain and the bridge contract.</p>
-    <ul class="state-grid">
-      <li class="st ok"><b>Credited</b><span>The bridge took it in; nothing to do.</span></li>
-      <li class="st warn"><b>Stuck, refundable</b><span>Never credited; the refund path is open.</span></li>
-      <li class="st info"><b>Requested or ready</b><span>Waiting out the lock, or anyone can execute.</span></li>
-      <li class="st ok"><b>Refunded</b><span>Back at the refund address.</span></li>
-      <li class="st bad"><b>Not recoverable</b><span>Below the minimum, a placeholder address, too old, or the 100-year lock.</span></li>
-    </ul>
   </section>
 
   <section class="board-wrap" id="board-wrap">

@@ -12,8 +12,9 @@ function byId<T extends HTMLElement>(id: string): T {
 
 const form = byId<HTMLFormElement>("form");
 const input = byId<HTMLInputElement>("q");
-const aform = byId<HTMLFormElement>("aform");
-const ainput = byId<HTMLInputElement>("aq");
+const label = byId<HTMLLabelElement>("q-label");
+const go = byId<HTMLButtonElement>("q-go");
+const hint = byId<HTMLElement>("q-hint");
 const out = byId<HTMLElement>("out");
 const boardBtn = byId<HTMLButtonElement>("board-btn");
 const board = byId<HTMLElement>("board");
@@ -112,23 +113,88 @@ function renderDeposit(v: DepositView, journey: JourneyStop[] | null): HTMLEleme
   return card;
 }
 
+/** A chain logo in a glowing coin, with an optional ✓/✕ badge (the journey's style). */
+function coin(logo: "zec" | "near" | "btc", badge = ""): HTMLElement {
+  const img = document.createElement("img");
+  img.className = "jlogo";
+  img.src = `logos/${logo}.svg`;
+  img.alt = "";
+  img.width = 22;
+  img.height = 22;
+  const node = el("span", { className: "jnode" }, img, el("span", { className: "jbadge", text: badge }));
+  node.setAttribute("aria-hidden", "true");
+  return node;
+}
+
 /** A Zcash address checked before sending: the plain next step, each kind of wallet, the refund it can take. */
 function renderAddress(v: AddressView): HTMLElement {
-  const card = el("article", { className: `card ${v.tone}` }, el("p", { className: "kicker", text: "Zcash address · before you send" }), el("h2", { text: v.title }));
+  const head = el("div", { className: "addr-head" }, coin("zec"), el("p", { className: "kicker", text: "Zcash address · before you send" }));
+  const card = el("article", { className: `card ${v.tone}` }, head, el("h2", { text: v.title }));
   const wallets = el("ul", { className: "wallets" });
-  for (const w of v.wallets) wallets.append(el("li", { className: w.can === "no" ? "no" : "yes" }, el("span", { className: "mark", text: w.can === "no" ? "✕" : "✓" }), el("div", {}, el("b", { text: w.label }), el("p", { text: w.why }))));
+  for (const w of v.wallets) wallets.append(el("li", { className: w.can === "no" ? "no" : "yes" }, coin("zec", w.can === "no" ? "✕" : "✓"), el("div", {}, el("b", { text: w.label }), el("p", { text: w.why }))));
   card.append(wallets);
-  if (v.refund) card.append(el("p", { className: "headline", text: v.refund }));
+  if (v.refund) card.append(el("div", { className: `refund-row${v.refund.includes("don't use it") ? " no" : ""}` }, coin("near"), el("p", { text: v.refund })));
   const dl = el("dl", {}, el("dt", { text: "Address" }), el("dd", { className: "mono", text: v.address }), el("dt", { text: "Kind" }), el("dd", { text: v.what }));
   card.append(dl, el("p", { className: "sources", text: v.note }));
   return card;
+}
+
+// One box, two tabs: the same input takes a transaction hash or a Zcash address; the tab only sets the words and examples.
+type Mode = "deposit" | "address";
+const MODE: Record<Mode, { label: string; placeholder: string; go: string; hint: string }> = {
+  deposit: {
+    label: "Zcash or Bitcoin transaction hash",
+    placeholder: "64 hex characters, from your wallet",
+    go: "Check deposit →",
+    hint: hint.textContent ?? "",
+  },
+  address: {
+    label: "Zcash address",
+    placeholder: "t1…, tex1…, u1… or zs1…",
+    go: "Check address →",
+    hint: "Says whether a transparent-only or a shielded wallet can pay it, what to do next, and which refund the bridge could make to it. Read from the address itself: nothing is looked up or sent, so it works offline.",
+  },
+};
+const tabs = [...document.querySelectorAll<HTMLButtonElement>(".mode")];
+let mode: Mode = "deposit";
+
+function setMode(next: Mode): void {
+  if (next === mode) return;
+  mode = next;
+  const m = MODE[next];
+  label.textContent = m.label;
+  input.placeholder = m.placeholder;
+  go.textContent = m.go;
+  hint.textContent = m.hint;
+  for (const t of tabs) {
+    const on = t.dataset.mode === next;
+    t.setAttribute("aria-selected", String(on));
+    t.tabIndex = on ? 0 : -1;
+    const pane = document.getElementById(t.getAttribute("aria-controls") ?? "");
+    if (pane) pane.hidden = !on;
+  }
+}
+
+for (const t of tabs) {
+  t.addEventListener("click", () => {
+    setMode(t.dataset.mode === "address" ? "address" : "deposit");
+    input.focus();
+  });
+  t.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const other = tabs.find((x) => x !== t);
+    if (!other) return;
+    other.click();
+    other.focus();
+  });
 }
 
 let latest = 0;
 /** The address check: offline, from the address itself. */
 function checkAddress(raw: string): void {
   latest++;
-  ainput.value = raw.trim();
+  setMode("address");
+  input.value = raw.trim();
   const address = asZcashAddress(raw);
   out.replaceChildren(address ? renderAddress(addressView(address)) : el("p", { className: "err", text: "That is not a Zcash address. Zcash addresses start with t1, t3, tex1, u1 or zs1 (on testnet: tm, textest1, utest1 or ztestsapling1)." }));
   out.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -139,9 +205,10 @@ async function check(raw: string): Promise<void> {
   if (!q) {
     // A Zcash address pasted into the deposit box goes to the address check.
     if (asZcashAddress(raw)) return checkAddress(raw);
-    out.replaceChildren(el("p", { className: "err", text: "Paste a Zcash or Bitcoin transaction hash: 64 hexadecimal characters, optionally followed by :output. To check a Zcash address, use the box beside it." }));
+    out.replaceChildren(el("p", { className: "err", text: "Paste a Zcash or Bitcoin transaction hash (64 hexadecimal characters, optionally followed by :output) or a Zcash address." }));
     return;
   }
+  setMode("deposit");
   input.value = raw.trim();
   const mine = ++latest;
   out.replaceChildren(el("p", { className: "muted", text: "Checking: reading the chain, the Omni bridge indexer and the connector contract on NEAR…" }));
@@ -187,20 +254,11 @@ const addressFromHash = (): string | null => {
   return m ? decodeURIComponent(m[1] ?? "") : null;
 };
 
-aform.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const a = asZcashAddress(ainput.value);
-  if (!a) return checkAddress(ainput.value);
-  const next = `#a=${encodeURIComponent(a.address)}`;
-  if (location.hash === next) checkAddress(a.address);
-  else location.hash = next;
-});
-
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const q = parseQuery(input.value);
   const address = q ? null : asZcashAddress(input.value);
-  if (!q && !address) return void check(input.value);
+  if (!q && !address) return mode === "address" ? checkAddress(input.value) : void check(input.value);
   const next = q ? `#q=${q.txid}${q.vout === undefined ? "" : `:${q.vout}`}` : `#a=${encodeURIComponent(address?.address ?? "")}`;
   if (location.hash === next) void check(input.value);
   else location.hash = next;

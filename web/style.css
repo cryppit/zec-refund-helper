@@ -18,7 +18,7 @@
 html, body { margin: 0; background: radial-gradient(1100px 600px at 80% -10%, rgba(42, 59, 214, 0.28), transparent 60%), var(--deep); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 1240px; margin: 0 auto; padding: 24px 20px 64px; position: relative; z-index: 0; }
 #out, footer { max-width: 980px; margin-left: auto; margin-right: auto; }
-#out, main > section, .tools .panel { scroll-margin-top: 84px; }
+#out, main > section { scroll-margin-top: 84px; }
 a { color: var(--lime); }
 h1 { font-size: clamp(40px, 7vw, 72px); line-height: 1; letter-spacing: -0.03em; margin: 10px 0 16px; }
 h2 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.01em; }
@@ -134,13 +134,18 @@ footer { margin-top: 56px; font-size: 14px; }
 
 .hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); gap: 32px; align-items: center; padding: 26px 0 10px; }
 @media (max-width: 860px) { .hero { grid-template-columns: minmax(0, 1fr); } }
-/* The two tools, side by side: a stuck deposit, and an address before you send. */
-.tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 28px; align-items: stretch; }
-@media (max-width: 860px) { .tools { grid-template-columns: minmax(0, 1fr); } }
-.tools .panel { display: flex; flex-direction: column; }
-.tools .panel .eyebrow { margin: 0 0 6px; }
-.tools .panel h2 { font-size: 26px; }
-.tools .panel h3 { margin-top: auto; padding-top: 18px; }
+/* One check box: a stuck deposit or, on the second tab, an address before you send. The input takes either. */
+.tool.panel { margin-top: 28px; padding: 0; overflow: hidden; }
+.modes { display: flex; border-bottom: 1px solid var(--line); background: rgba(4, 6, 26, 0.45); }
+.mode { flex: 1; min-height: 56px; border-radius: 0; background: transparent; color: var(--mute); font-size: 16px; font-weight: 650; box-shadow: inset 0 -2px 0 transparent; }
+.mode:hover { color: var(--ink); }
+.mode[aria-selected="true"] { color: var(--ink); background: rgba(221, 242, 74, 0.05); box-shadow: inset 0 -3px 0 var(--lime); }
+.mode:focus-visible { outline: 2px solid var(--lime); outline-offset: -2px; }
+.tool-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 32px; padding: 26px; }
+@media (max-width: 860px) { .tool-body { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 20px; } }
+.tool .panes h3 { margin: 0 0 10px; }
+@media (max-width: 860px) { .tool .panes h3 { margin-top: 14px; } }
+@media (max-width: 560px) { .mode { font-size: 14.5px; padding: 0 10px; } .mode .wide { display: none; } }
 .chip { display: inline-flex; gap: 10px; align-items: center; border: 1px solid rgba(221, 242, 74, 0.35); background: rgba(221, 242, 74, 0.06); border-radius: 999px; padding: 6px 14px; font: 600 12px/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--mute); margin: 0; }
 .chip span { color: var(--lime); }
 .hero h1 { font-size: clamp(40px, 4.1vw, 60px); line-height: 0.98; letter-spacing: -0.035em; margin: 18px 0 10px; font-weight: 850; }
@@ -198,15 +203,18 @@ footer { margin-top: 56px; font-size: 14px; }
 .ex-tag.bad { color: var(--red); }
 
 /* How a check works, and a real result beside it */
-.how { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 24px; margin-top: 40px; align-items: start; }
+.how { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 24px; margin-top: 40px; align-items: stretch; }
+.result-card { display: flex; flex-direction: column; }
+.result-card .more-link { margin-top: auto; }
 @media (max-width: 960px) { .how { grid-template-columns: minmax(0, 1fr); } }
-.flow-card, .result-card, .feat, .states { padding: 24px; border-radius: 20px; background: var(--glass); border: 1px solid var(--line); }
-.flow-card h2, .states h2 { margin: 0 0 4px; font-size: 24px; }
+.flow-card, .result-card, .feat { padding: 24px; border-radius: 20px; background: var(--glass); border: 1px solid var(--line); }
+.flow-card h2 { margin: 0 0 4px; font-size: 24px; }
+.flow-card .sub { font-size: 20px; margin: 34px 0 4px; padding-top: 26px; border-top: 1px solid var(--line); }
 .flow { list-style: none; margin: 26px 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .flow li { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; font-size: 13.5px; color: var(--mute); }
 .flow b { color: var(--ink); font-size: 15px; margin-top: 6px; }
 .flow li:not(:last-child)::after { content: ""; position: absolute; top: 30px; left: calc(50% + 38px); width: calc(100% - 64px); border-top: 2px dotted rgba(221, 242, 74, 0.5); }
-.fi { width: 60px; height: 60px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle, rgba(221, 242, 74, 0.12), rgba(4, 6, 26, 0.9) 70%); box-shadow: inset 0 0 0 2px var(--c, var(--lime)), 0 0 24px color-mix(in srgb, var(--c, var(--lime)) 45%, transparent); }
+.fi { flex: none; width: 60px; height: 60px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle, rgba(221, 242, 74, 0.12), rgba(4, 6, 26, 0.9) 70%); box-shadow: inset 0 0 0 2px var(--c, var(--lime)), 0 0 24px color-mix(in srgb, var(--c, var(--lime)) 45%, transparent); }
 .fi::before { content: ""; width: 26px; height: 26px; background: var(--c, var(--lime)); -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; }
 .i-paste { --c: #5ee0f0; --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1'/%3E%3C/svg%3E"); }
 .i-read { --c: #8fb4ff; --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E"); }
@@ -217,6 +225,8 @@ footer { margin-top: 56px; font-size: 14px; }
 .eyebrow { font: 600 12px/1.2 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); margin: 0; }
 .ok-title { color: var(--lime); font-size: 22px; margin: 6px 0 4px; }
 .result-card .journey { margin: 16px 0 12px; }
+.result-card .jstop { padding-bottom: 12px; }
+.result-card .jrail { top: 34px; }
 .more-link { font-size: 14px; text-decoration: none; }
 
 /* Three feature cards over the key art */
@@ -230,17 +240,18 @@ footer { margin-top: 56px; font-size: 14px; }
 .feat p { color: #c9cde6; font-size: 15px; margin: 0; }
 .fx { width: 58px; height: 58px; border-radius: 16px; display: grid; place-items: center; background: rgba(4, 6, 26, 0.7); box-shadow: inset 0 0 0 2px #8fb4ff, 0 0 26px rgba(143, 180, 255, 0.45); }
 .fx img { filter: drop-shadow(0 0 8px rgba(236, 178, 68, 0.8)); }
-.fx-c::before, .fx-o::before { content: ""; width: 30px; height: 30px; background: var(--lime); -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; }
+.fx-c::before, .fx-o::before, .fx-s::before { content: ""; width: 30px; height: 30px; background: var(--lime); -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; }
 .fx-c { box-shadow: inset 0 0 0 2px var(--lime), 0 0 26px rgba(221, 242, 74, 0.4); --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M15.5 8.5l-2 5-5 2 2-5z'/%3E%3C/svg%3E"); }
 .fx-o { --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16'/%3E%3C/svg%3E"); box-shadow: inset 0 0 0 2px var(--lime), 0 0 26px rgba(221, 242, 74, 0.4); }
 .fx-o::before { background: var(--lime); }
+.fx-s { box-shadow: inset 0 0 0 2px var(--lime), 0 0 26px rgba(221, 242, 74, 0.4); --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E"); }
 .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px !important; }
 .tags span { border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; font-size: 12px; color: var(--ink); background: rgba(4, 6, 26, 0.6); }
 
-/* What it tells apart */
-.states { margin-top: 24px; }
-.state-grid { list-style: none; margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-@media (max-width: 960px) { .state-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* What it tells apart, under the flow */
+.state-grid { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; }
+.state-grid .st { grid-template-columns: 170px minmax(0, 1fr); align-items: baseline; gap: 12px; padding: 11px 14px; }
+@media (max-width: 560px) { .state-grid .st { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
 .st { display: grid; gap: 4px; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: rgba(4, 6, 26, 0.55); font-size: 13.5px; color: var(--mute); }
 .st b { font-size: 15px; }
 .st.ok b { color: var(--lime); } .st.warn b { color: var(--amber); } .st.info b { color: #7dd3fc; } .st.bad b { color: var(--red); }
@@ -250,9 +261,24 @@ footer { margin-top: 56px; font-size: 14px; }
 /* The address check: one row per kind of wallet, ✓ or ✕. */
 .wallets { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 10px; }
 .wallets li { display: flex; gap: 14px; align-items: flex-start; background: rgba(5, 8, 34, 0.55); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
-.wallets .mark { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; }
-.wallets .yes .mark { background: rgba(221, 242, 74, 0.16); color: var(--lime); }
-.wallets .no .mark { background: rgba(255, 107, 107, 0.16); color: var(--red); }
+.wallets .jnode, .refund-row .jnode, .addr-head .jnode { flex: none; width: 34px; }
+.wallets .no .jnode { background: radial-gradient(circle at 50% 40%, rgba(255, 107, 107, 0.18), #04061a 72%); box-shadow: inset 0 0 0 2px var(--red), 0 0 0 4px rgba(255, 107, 107, 0.1), 0 0 20px rgba(255, 107, 107, 0.35); }
+.wallets .no .jbadge { background: var(--red); color: #fff; }
+.wallets .no .jlogo { filter: grayscale(0.6) drop-shadow(0 0 4px rgba(255, 107, 107, 0.5)); }
+.wallets li > div { padding-top: 4px; }
+.addr-head { display: flex; align-items: center; gap: 12px; }
+.refund-row { display: flex; gap: 14px; align-items: center; margin: 0 0 18px; padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(0, 236, 151, 0.28); background: rgba(0, 236, 151, 0.05); }
+.refund-row p { margin: 0; color: #d9dcec; }
+.refund-row .jnode { box-shadow: inset 0 0 0 2px #00ec97, 0 0 0 4px rgba(0, 236, 151, 0.1), 0 0 20px rgba(0, 236, 151, 0.35); background: radial-gradient(circle at 50% 40%, rgba(0, 236, 151, 0.16), #04061a 72%); }
+.refund-row.no { border-color: rgba(255, 107, 107, 0.35); background: rgba(255, 107, 107, 0.05); }
+.mode { display: inline-flex; align-items: center; justify-content: center; }
+.mode-coins { display: inline-flex; margin-right: 10px; }
+.mode-coins img { width: 30px; height: 30px; padding: 5px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #3a2a08, #120c02 70%); box-shadow: inset 0 0 0 1.5px rgba(236, 178, 68, 0.55), 0 0 10px rgba(236, 178, 68, 0.25); opacity: 0.75; }
+.mode-coins img + img { margin-left: -7px; }
+.mode-coins img[src$="btc.svg"] { box-shadow: inset 0 0 0 1.5px rgba(247, 147, 26, 0.6), 0 0 10px rgba(247, 147, 26, 0.25); }
+.mode[aria-selected="true"] .mode-coins img { opacity: 1; box-shadow: inset 0 0 0 1.5px var(--gold), 0 0 16px rgba(236, 178, 68, 0.6); }
+.mode[aria-selected="true"] .mode-coins img[src$="btc.svg"] { box-shadow: inset 0 0 0 1.5px #f7931a, 0 0 16px rgba(247, 147, 26, 0.6); }
+@media (max-width: 400px) { .mode-coins img + img { display: none; } .mode-coins { margin-right: 6px; } }
 .wallets b { display: block; margin-bottom: 4px; }
 .wallets p { margin: 0; color: #d9dcec; }
 .card .mono, dd.mono { font-family: var(--mono); word-break: break-all; }
