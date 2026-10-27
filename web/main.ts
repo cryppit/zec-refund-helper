@@ -3,7 +3,7 @@
 import { checkBtcDeposit, checkRefundBoard, publicUtxoRefundClients } from "../src/btc-refund.js";
 import { asZcashAddress } from "../src/render-address.js";
 import { boardNotes, boardView, depositView, journeyView, parseQuery, type DepositView, type JourneyStop } from "../src/web/view.js";
-import { byId, el } from "./ui.js";
+import { byId, el, loading } from "./ui.js";
 
 const form = byId<HTMLFormElement>("form");
 const input = byId<HTMLInputElement>("q");
@@ -102,7 +102,7 @@ async function check(raw: string): Promise<void> {
   }
   input.value = raw.trim();
   const mine = ++latest;
-  out.replaceChildren(el("p", { className: "muted", text: "Checking: reading the chain, the Omni bridge indexer and the connector contract on NEAR…" }));
+  out.replaceChildren(loading("Reading the chain…", "The Bitcoin or Zcash chain, the Omni bridge indexer and the connector contract on NEAR."));
   try {
     const r = await checkBtcDeposit(q.txid, publicUtxoRefundClients(), nowSec(), q.vout);
     if (mine !== latest) return;
@@ -118,7 +118,7 @@ async function check(raw: string): Promise<void> {
 
 async function showBoard(): Promise<void> {
   boardBtn.disabled = true;
-  board.replaceChildren(el("p", { className: "muted", text: "Reading every refund request on both connectors…" }));
+  board.replaceChildren(loading("Reading the chain…", "Every refund request on the Bitcoin and Zcash connectors on NEAR."));
   try {
     const open = await checkRefundBoard(publicUtxoRefundClients(), nowSec());
     const rows = boardView(open);

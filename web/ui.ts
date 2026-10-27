@@ -34,3 +34,12 @@ export function coin(logo: "zec" | "near" | "btc", badge = ""): HTMLElement {
   node.setAttribute("aria-hidden", "true");
   return node;
 }
+
+/** What shows while a check reads public data: a glowing card that says what is being read, so nobody thinks it froze. */
+export function loading(title: string, detail: string): HTMLElement {
+  const box = el("div", { className: "loading" }, el("span", { className: "ld-orb" }), el("div", { className: "ld-text" }, el("b", { text: title }), el("span", { text: detail })), el("span", { className: "ld-bar" }));
+  box.setAttribute("role", "status");
+  box.querySelector(".ld-orb")?.setAttribute("aria-hidden", "true");
+  box.querySelector(".ld-bar")?.setAttribute("aria-hidden", "true");
+  return box;
+}

@@ -378,3 +378,14 @@ a.ill-card:hover .ill-open { opacity: 1; }
 .mistake-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 18px; }
 .state-grid.mistake-grid .st { grid-template-columns: minmax(0, 1fr); align-content: start; gap: 6px; padding: 16px; }
 .cli { margin: 14px 0 0; font-size: 13px; }
+
+/* While a check reads public data: a card that pops in and glows, with a pulsing dot and a light sweeping along it. */
+.loading { position: relative; display: flex; align-items: center; gap: 14px; margin-top: 16px; padding: 16px 18px; overflow: hidden; border: 1px solid rgba(221, 242, 74, 0.5); border-radius: 14px; background: linear-gradient(90deg, rgba(221, 242, 74, 0.05), rgba(221, 242, 74, 0.12), rgba(221, 242, 74, 0.05)); box-shadow: 0 0 0 4px rgba(221, 242, 74, 0.06), 0 0 34px rgba(221, 242, 74, 0.28); animation: ld-pop 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.ld-orb { flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 18px rgba(221, 242, 74, 0.85); animation: ld-pulse 1.2s ease-out infinite; }
+.ld-text b { display: block; color: var(--lime); font-size: 1.05rem; text-shadow: 0 0 18px rgba(221, 242, 74, 0.45); }
+.ld-text span { display: block; margin-top: 2px; color: var(--mute); font-size: 0.9rem; }
+.ld-bar { position: absolute; left: 0; bottom: 0; width: 40%; height: 2px; background: linear-gradient(90deg, transparent, var(--lime), transparent); animation: ld-sweep 1.4s ease-in-out infinite; }
+@keyframes ld-pop { from { opacity: 0; transform: translateY(6px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes ld-pulse { 0% { box-shadow: 0 0 0 0 rgba(221, 242, 74, 0.6), 0 0 18px rgba(221, 242, 74, 0.85); } 100% { box-shadow: 0 0 0 14px rgba(221, 242, 74, 0), 0 0 18px rgba(221, 242, 74, 0.85); } }
+@keyframes ld-sweep { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+@media (prefers-reduced-motion: reduce) { .loading, .ld-orb, .ld-bar { animation: none; } }
