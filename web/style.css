@@ -389,3 +389,24 @@ a.ill-card:hover .ill-open { opacity: 1; }
 @keyframes ld-pulse { 0% { box-shadow: 0 0 0 0 rgba(221, 242, 74, 0.6), 0 0 18px rgba(221, 242, 74, 0.85); } 100% { box-shadow: 0 0 0 14px rgba(221, 242, 74, 0), 0 0 18px rgba(221, 242, 74, 0.85); } }
 @keyframes ld-sweep { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
 @media (prefers-reduced-motion: reduce) { .loading, .ld-orb, .ld-bar { animation: none; } }
+
+/* The watch page: a list of deposits re-checked every 10 minutes, what changed, a summary for a ticket. */
+textarea { width: 100%; box-sizing: border-box; resize: vertical; background: #050822; color: var(--ink); border: 1px solid rgba(154, 163, 199, 0.35); border-radius: 12px; padding: 14px 16px; font: 14px/1.5 var(--mono); }
+textarea:focus { outline: 2px solid var(--lime); outline-offset: 1px; }
+.watch-hint { font-size: 13px; margin: 8px 0 0; }
+.watch-status, #out, .watch-actions { max-width: 980px; margin-left: auto; margin-right: auto; }
+.watch-status { min-height: 1.4em; margin-top: 8px; }
+.watch-table { overflow-x: auto; }
+.watch-table td { vertical-align: top; }
+.watch-table td.mono { white-space: nowrap; word-break: normal; }
+.watch-table td small { display: block; color: var(--mute); font-size: 12px; margin-top: 2px; }
+.watch-table td.why { color: #c9cde6; font-size: 13px; min-width: 260px; }
+.watch-table td b { display: block; }
+.watch-table .changed { display: inline-block; margin-top: 4px; font: 600 11px/1.4 var(--mono); color: #04061a; background: var(--amber); border-radius: 999px; padding: 1px 8px; }
+.watch-table tr.is-changed { background: rgba(255, 181, 71, 0.07); }
+.watch-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.watch-actions button { background: transparent; color: var(--ink); border: 1px solid var(--line); min-height: 42px; font-size: 14px; }
+.watch-actions button:hover:not(:disabled) { border-color: var(--lime); }
+.watch-actions button:disabled { opacity: 0.45; cursor: default; }
+.support { max-width: 980px; margin: 56px auto 0; }
+.support h2 { margin: 6px 0 8px; }

@@ -8,7 +8,8 @@
 Find a Zcash deposit that is stuck in the NEAR Omni bridge from its transaction hash, see where the ZEC is and who can
 move it, and get the bridge's own refund steps. Bitcoin deposits through the same bridge work the same way.
 Before you send ZEC, it also checks the address: whether a transparent-only or a shielded wallet can pay it
-([Before you send](#before-you-send-check-a-zcash-address)).
+([Before you send](#before-you-send-check-a-zcash-address)). And it can watch a list of stuck deposits for you, or for a
+wallet support team, and say when one changes ([Watch deposits](#watch-deposits-for-users-and-support-teams)).
 
 Keyless and read-only: it never asks for, sees or holds a key, and it never signs or sends anything.
 
@@ -139,6 +140,19 @@ looked up or sent, on the page or in the terminal.
 Who asked for it: a wallet support team, replying on the Zcash forum on 26 October 2026, asked for a plain-language next
 step (can their user send to this address?) instead of only the address type. This was added on 27 October in answer.
 
+### Watch deposits (for users and support teams)
+
+A refund takes days: the request, a lock, the execute, the coin going home. On the
+[watch page](https://cryppit.github.io/zec-refund-helper/watch.html), paste the deposits you are waiting on, one
+transaction hash per line (up to 25), with a note after each if you like (a ticket number, a name). The page runs the
+same deposit check on each, one at a time, and again every 10 minutes while it stays open. A deposit whose state changed
+since the last check is marked with what it was, the tab title counts the changes, and the browser can notify you.
+"Copy a summary for a ticket" writes each deposit's state, why and what changed in plain words, for a support ticket or a
+message to the customer. Any row opens the full check, with the steps and the only address the coin can go back to.
+
+The list, the notes and the last states are kept in the browser (localStorage) and nowhere else; "Clear the list"
+removes them. Watching is read-only and runs only while the page is open: there is no server to watch for you.
+
 ### How much is stuck: `--scan`
 
 `zec-refund --scan` measures the stuck money across both connectors (results and method: [IMPACT.md](IMPACT.md)):
@@ -239,6 +253,8 @@ steps is public.
   without it, in 12 to 15 seconds each. When a service refuses, the tool names it and says it could not check, never
   that the deposit does not exist. Ask Tor for a new circuit (in Tor Browser, "New Tor circuit for this site") and try
   again.
+- **The watch list stays in your browser.** The watch page saves your list, notes and the last state of each deposit
+  in the browser's localStorage, never on a server; each re-check is an ordinary lookup, seen by the same services.
 - **The refund steps are public.** They are NEAR transactions, and the account that signs them is linked to the
   deposit for good. Anyone may sign them, so if that matters, sign from an account that is not tied to your name or
   main wallet, and fund it from somewhere that is not linked to you either: the funding transfer is public too.
@@ -326,7 +342,7 @@ return the fields that source defines.
 All the code here was written during the hackathon's build window (28 September to 28 October 2026). The refund
 logic was first written between 10 and 14 October in Cryppit's private monorepo and moved into this repository on 13
 and 14 October; the address check ("Before you send") was first written there on 26 October and moved here on 27
-October. This repository is the whole entry: the page and the CLI build and run from it alone, with no other Cryppit
+October. The watch page was written here on 27 October. This repository is the whole entry: the page and the CLI build and run from it alone, with no other Cryppit
 service behind them.
 
 ## Licence

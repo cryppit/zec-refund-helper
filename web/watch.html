@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src https:; img-src 'self' data:; media-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Watch deposits · Zcash Refund Helper</title>
+<meta name="description" content="Watch ZEC and BTC deposits stuck in the Omni bridge: the page re-checks each one every 10 minutes and says when it changes, so a user or a wallet support team knows the moment a refund can move. The list stays in your browser.">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Watch stuck Omni bridge deposits">
+<meta property="og:description" content="Re-checked every 10 minutes, with what changed and what comes next. For people waiting on a refund and for wallet support teams. By Cryppit.">
+<meta property="og:url" content="https://cryppit.github.io/zec-refund-helper/watch.html">
+<meta property="og:image" content="https://cryppit.github.io/zec-refund-helper/icons/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#04061a">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="watch.js"></script>
+</head>
+<body>
+<nav class="top" aria-label="Site">
+  <a class="brand" href="./"><img src="logos/zec.svg" alt="" width="30" height="30"><span>Zcash Refund Helper</span></a>
+  <span class="top-links"><a href="./#check">Check a deposit</a><a href="address.html">Check an address</a><a href="watch.html" aria-current="page">Watch deposits</a><a href="#support">For support teams</a></span>
+  <a class="gh" href="https://github.com/cryppit/zec-refund-helper" target="_blank" rel="noopener noreferrer">GitHub</a>
+</nav>
+
+<main id="top">
+  <section class="hero addr-hero">
+    <div class="hero-copy">
+      <p class="chip"><span>✓</span> Your list stays in this browser · read-only</p>
+      <h1>Waiting on a refund? <span class="hl">Watch it here.</span></h1>
+      <p class="lede">A deposit stuck in the Omni bridge moves in steps: the refund is requested, its lock runs out, someone executes it, the coin goes home. Paste the deposits you are waiting on. The page checks each one, re-checks every 10 minutes while it stays open, and tells you the moment one changes and what comes next.</p>
+
+      <form id="form" class="addr-form panel" autocomplete="off">
+        <label for="list">Deposit transaction hashes, one per line (up to 25)</label>
+        <textarea id="list" rows="5" spellcheck="false" placeholder="9deffb31…2bec39  ticket #4512&#10;a second hash, optionally with :output and a note"></textarea>
+        <p class="muted watch-hint">Anything after the hash on a line is your note: a ticket number or a name. Notes stay in this browser.</p>
+        <button type="submit">Watch these →</button>
+      </form>
+    </div>
+
+    <figure class="ill" aria-label="How a watch round reads">
+      <div class="ill-head"><span class="eyebrow">How a watch round reads</span><span class="ill-tag">Illustration</span></div>
+      <div class="ill-card">
+        <span class="ill-top"><img src="logos/btc.svg" alt="" width="26" height="26"><code>ticket #4512</code><span class="ill-chip">Changed</span></span>
+        <span class="ill-title">Ready to refund</span>
+        <span class="ill-sub">Was "Refund requested" at the last check. The lock has ended: one NEAR call sends the coin back to the refund address.</span>
+      </div>
+      <div class="ill-card">
+        <span class="ill-top"><img src="logos/zec.svg" alt="" width="26" height="26"><code>ticket #4519</code><span class="ill-chip">Same</span></span>
+        <span class="ill-title">Refund requested</span>
+        <span class="ill-sub">Its lock ends on the date shown. Nothing to do until then.</span>
+      </div>
+      <figcaption>Every row says what changed and what comes next, in the same words as a single check.</figcaption>
+    </figure>
+  </section>
+
+  <p id="status" class="muted watch-status" role="status" aria-live="polite"></p>
+  <section id="out" aria-live="polite"></section>
+  <div class="watch-actions">
+    <button type="button" id="copy" class="ghost-btn">Copy a summary for a ticket</button>
+    <button type="button" id="notify" class="ghost-btn">Tell me when one changes</button>
+    <button type="button" id="clear" class="ghost-btn">Clear the list</button>
+  </div>
+
+  <section class="support" id="support">
+    <p class="eyebrow">For wallet and exchange support teams</p>
+    <h2>Every stuck-deposit ticket, in one place</h2>
+    <p class="muted">When a customer's ZEC or BTC never arrives through the Omni bridge, the fix is the bridge's own refund, and it takes days: a request, a lock, an execute. This page keeps watch so nobody has to re-check by hand.</p>
+    <ul class="state-grid">
+      <li class="st info"><b>1. Paste every open case</b><span>One deposit hash per line, with the ticket number after it. The list is kept in this browser only, so it never reaches us or anyone else.</span></li>
+      <li class="st warn"><b>2. Leave the tab open</b><span>Each deposit is re-checked every 10 minutes. A row that changed is marked, the tab title counts the changes, and the browser can notify you.</span></li>
+      <li class="st ok"><b>3. Copy a summary into the ticket</b><span>One button writes each deposit's state, why, and what changed, in plain words you can paste to the customer.</span></li>
+      <li class="st ok"><b>4. Tell the customer the exact next step</b><span>Open any row for the full check: the steps, what each costs, and the only address the coin can go back to.</span></li>
+      <li class="st bad"><b>Flag the ones that can't come back</b><span>Absorbed below the minimum, a placeholder refund address, too old to request, or behind the bridge's years-long lock: the page says so, so nobody promises a refund that can't happen.</span></li>
+    </ul>
+  </section>
+
+  <section class="features">
+    <article class="feat art-a">
+      <span class="fx" aria-hidden="true"><img src="logos/zec.svg" alt="" width="34" height="34"></span>
+      <h3>For the person waiting</h3>
+      <p>Paste your own deposit and leave the page open, or come back later: it remembers the list in this browser and shows what changed since you last looked.</p>
+      <p class="tags"><span>ZEC</span><span>BTC</span><span>Omni bridge</span></p>
+    </article>
+    <article class="feat art-b">
+      <span class="fx fx-s" aria-hidden="true"></span>
+      <h3>Nothing leaves your browser</h3>
+      <p>The list and the last states are saved in this browser only. Each check reads the same public sources as a single check (the chain's explorer, the Omni bridge indexer, NEAR), which see your IP address, as any website does.</p>
+      <p class="tags"><span>No account</span><span>No server</span><span>No keys</span></p>
+    </article>
+    <article class="feat art-c">
+      <span class="fx fx-o" aria-hidden="true"></span>
+      <h3>It never moves coins</h3>
+      <p>Watching is read-only. Requesting or executing a refund is a NEAR call you sign yourself, and the coin can only go back to the refund address the deposit names. Nobody needs a seed phrase or a key.</p>
+      <p class="tags"><span>Read-only</span><span>MIT</span></p>
+    </article>
+  </section>
+
+  <footer>
+    <p>Open source (MIT): <a href="https://github.com/cryppit/zec-refund-helper" target="_blank" rel="noopener noreferrer">github.com/cryppit/zec-refund-helper</a> · by Cryppit · <a href="./">Check a stuck deposit</a></p>
+    <p class="muted">The watch list is stored in this browser (localStorage) and cleared with "Clear the list". Re-checks run only while the page is open. Independent project, not affiliated with NEAR, the Omni bridge or the Zcash organisations. It never holds keys or signs anything. Chain logos: web3icons (MIT).</p>
+  </footer>
+</main>
+</body>
+</html>
