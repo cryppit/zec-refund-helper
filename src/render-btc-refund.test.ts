@@ -254,9 +254,9 @@ describe("renderBtcRefundText for Zcash", () => {
     expect(text).not.toContain("1. ");
   });
 
-  it("a stuck deposit older than the Zcash light client's 90 days: too old to request, no steps", () => {
+  it("a stuck deposit older than the Zcash light client's window: too old to request, no steps", () => {
     const text = zreport(ZFACTS, ZFACTS.confirmedAtSec! + 91 * 86_400);
-    expect(text).toContain("TOO OLD TO REQUEST  the bridge's light client keeps about 90 days of Zcash blocks and no longer has this deposit's (since about 2026-11-17), so request_refund fails.");
+    expect(text).toContain("TOO OLD TO REQUEST  the bridge's light client keeps about 30 days of Zcash blocks and no longer has this deposit's (since about 2026-11-09), so request_refund fails.");
     expect(text).not.toContain("1. ");
   });
 

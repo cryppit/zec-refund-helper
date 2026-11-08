@@ -139,6 +139,34 @@ describe("btcDepositVerdict", () => {
   });
 });
 
+describe("the Zcash request window after NU7 (25-second blocks from height 3,543,405)", () => {
+  // zcash-client.bridge.near keeps 103,680 blocks (get_mainchain_size, read 9 Nov 2026) and has applied NU7's 25-second
+  // spacing since block 3,543,405 (get_config: post_nu7_pow_target_spacing 25, nu7_activation_height 3543405), mined at
+  // 2026-11-06 02:34:02 UTC. A deposit's block is pruned 103,680 blocks after it: 75 s each before NU7, 25 s after.
+  const NU7_AT = 1_793_932_442;
+  const zec = (confirmedAtSec: number) => facts({ chain: "zcash", confirmedAtSec, msg: withRefundAddress });
+
+  it("gives a deposit made after NU7 about 30 days (103,680 blocks of 25 s)", () => {
+    const t = NU7_AT + 2 * DAY;
+    expect(btcDepositVerdict(zec(t), ZCONFIG, t + 7 * HOUR)).toMatchObject({ state: "refundable", requestBySec: t + 103_680 * 25 });
+  });
+
+  it("gives a deposit made before NU7 only the blocks it has left, now mined every 25 s", () => {
+    const t = NU7_AT - 60 * DAY; // 69,120 blocks of 75 s before NU7, so 34,560 left after it
+    expect(btcDepositVerdict(zec(t), ZCONFIG, NU7_AT + DAY)).toMatchObject({ state: "refundable", requestBySec: NU7_AT + 34_560 * 25 });
+    expect(btcDepositVerdict(zec(t), ZCONFIG, NU7_AT + 11 * DAY)).toMatchObject({ state: "too_old", requestBySec: NU7_AT + 34_560 * 25 });
+  });
+
+  it("says a deposit pruned before NU7 is too old", () => {
+    const t = NU7_AT - 100 * DAY;
+    expect(btcDepositVerdict(zec(t), ZCONFIG, NU7_AT)).toEqual({ state: "too_old", requestBySec: t + 103_680 * 75 });
+  });
+
+  it("names the window in days at today's block time", () => {
+    expect(REQUEST_WINDOW.zcash.span).toBe("about 30 days");
+  });
+});
+
 describe("the bridge's 100-year lock (unsafe_refund_timelock_sec, mainnet since 2026-10-16)", () => {
   // btc-connector.bridge.near went from 1,209,600 s (14 days) to 3,153,600,000 s between blocks 220,226,369 and
   // 220,227,834; zcash-connector.bridge.near read the same on 2026-10-17 (block 220,386,990). The 2-day lock is unchanged.
@@ -465,7 +493,7 @@ describe("a Zcash deposit funded from a shielded pool", () => {
     expect(steps[1]?.command).toBe(`bridge-cli mainnet btc-request-refund --chain zcash --btc-tx-hash ${ZTX} --vout 0 --refund-address <your own unified address (u1…) with an Orchard receiver>`);
     expect(steps[1]?.note).toContain("cannot check that the address is yours");
     expect(steps[1]?.note).toContain("The signing account needs a little over 2.3 NEAR");
-    expect(steps[1]?.note).toContain("Request it before about 2026-11-17");
+    expect(steps[1]?.note).toContain("Request it before about 2026-11-09");
   });
 
   it("several transparent senders still get no suggestion and no commands", () => {
@@ -518,15 +546,16 @@ describe("refund safety", () => {
     expect(btcDepositVerdict(facts(), CONFIG, CONFIRMED + 52_704 * 600 + 1)).toEqual({ state: "too_old", requestBySec: CONFIRMED + 52_704 * 600 });
   });
 
-  it("a Zcash refund must be requested while zcash-client.bridge.near still has the deposit's block (103,680 blocks: 90 days at 75 seconds)", () => {
-    expect(REQUEST_WINDOW.zcash).toMatchObject({ blocks: 103_680, blockSec: 75 });
-    expect(requestWindowSec("zcash")).toBe(90 * DAY_S);
+  it("a Zcash refund must be requested while zcash-client.bridge.near still has the deposit's block (103,680 blocks: 75 s each before NU7, 25 s after)", () => {
+    expect(REQUEST_WINDOW.zcash).toMatchObject({ blocks: 103_680, blockSec: 25 });
+    expect(requestWindowSec("zcash")).toBe(30 * DAY_S);
+    // Confirmed 2026-08-19: 90,299 blocks of 75 s before NU7 (2026-11-06 02:34:02 UTC), so 13,381 blocks of 25 s after it.
+    const deadline = 1_793_932_442 + 13_381 * 25; // 2026-11-09 23:29:27 UTC
     const f = zfacts({ msg: { ...withRefundAddress, refund_address: T_ADDR } });
     const v = btcDepositVerdict(f, ZCONFIG, CONFIRMED + 60 * DAY_S);
-    expect(v).toMatchObject({ state: "refundable", requestBySec: CONFIRMED + 90 * DAY_S });
-    expect(refundSteps(f, v, ZCONFIG).find((s) => s.title.startsWith("Request"))?.note).toContain("Request it before about 2026-11-17");
-    expect(btcDepositVerdict(f, ZCONFIG, CONFIRMED + 91 * DAY_S)).toEqual({ state: "too_old", requestBySec: CONFIRMED + 90 * DAY_S });
-    expect(refundSteps(f, { state: "too_old", requestBySec: CONFIRMED + 90 * DAY_S }, ZCONFIG)).toEqual([]);
+    expect(v).toMatchObject({ state: "refundable", requestBySec: deadline });
+    expect(refundSteps(f, v, ZCONFIG).find((s) => s.title.startsWith("Request"))?.note).toContain("Request it before about 2026-11-09");
+    expect(btcDepositVerdict(f, ZCONFIG, deadline + 1)).toEqual({ state: "too_old", requestBySec: deadline });
   });
 
   it("the Bitcoin window is unchanged: 52,704 blocks at 10 minutes, about 366 days", () => {

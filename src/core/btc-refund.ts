@@ -228,15 +228,32 @@ const PLACEHOLDER_REFUND_ADDRESSES: ReadonlySet<string> = new Set([
  * How long a refund can still be requested. `request_refund` proves the deposit against the chain's light client on
  * NEAR (the connector's `btc_light_client_account_id`), which keeps only its last `gc_threshold` blocks and prunes the
  * rest; a request for a deposit whose block is gone fails. btc-client.bridge.near keeps 52,704 blocks (about 366 days
- * at 10 minutes a block); zcash-client.bridge.near keeps 103,680 (90 days at Zcash's 75-second blocks: on 2026-10-14
- * `get_mainchain_size` was 103,680 and `get_block_hash_by_height` had block 3,413,659 and not 3,413,658, with
- * 3,517,338 the newest). A time estimate: `span` is how the reports word it.
+ * at 10 minutes a block); zcash-client.bridge.near keeps 103,680 (on 2026-10-14 `get_mainchain_size` was 103,680 and
+ * `get_block_hash_by_height` had block 3,413,659 and not 3,413,658, with 3,517,338 the newest; still 103,680 on
+ * 2026-11-09). Zcash blocks were 75 s apart until NU7 (height 3,543,405, mined 2026-11-06 02:34:02 UTC) and 25 s after
+ * it (the client's get_config: post_nu7_pow_target_spacing 25), so the same 103,680 blocks now last about 30 days, not
+ * 90. A time estimate: `span` is how the reports word it, at today's block time.
  */
 export const REQUEST_WINDOW: Record<UtxoChain, { blocks: number; blockSec: number; span: string }> = {
   btc: { blocks: 52_704, blockSec: 600, span: "about a year" },
-  zcash: { blocks: 103_680, blockSec: 75, span: "about 90 days" },
+  zcash: { blocks: 103_680, blockSec: 25, span: "about 30 days" },
 };
+/** Zcash's block time before NU7, and when NU7 activated (the time of block 3,543,405). */
+const ZCASH_PRE_NU7_BLOCK_SEC = 75;
+export const ZCASH_NU7_AT_SEC = 1_793_932_442;
 export const requestWindowSec = (chain: UtxoChain): number => REQUEST_WINDOW[chain].blocks * REQUEST_WINDOW[chain].blockSec;
+
+/**
+ * When the light client prunes a deposit's block: `blocks` blocks after it. For Zcash, blocks mined before NU7 took 75 s
+ * and blocks after it take 25 s, so a deposit from before NU7 has only its remaining blocks left, at the new pace.
+ */
+export function requestDeadlineSec(chain: UtxoChain, confirmedAtSec: number): number {
+  if (chain !== "zcash" || confirmedAtSec >= ZCASH_NU7_AT_SEC) return confirmedAtSec + requestWindowSec(chain);
+  const { blocks, blockSec } = REQUEST_WINDOW.zcash;
+  const before = Math.floor((ZCASH_NU7_AT_SEC - confirmedAtSec) / ZCASH_PRE_NU7_BLOCK_SEC);
+  if (before >= blocks) return confirmedAtSec + blocks * ZCASH_PRE_NU7_BLOCK_SEC;
+  return ZCASH_NU7_AT_SEC + (blocks - before) * blockSec;
+}
 /** The Bitcoin window alone (kept for existing callers): `requestWindowSec("btc")`. */
 export const BTC_REQUEST_WINDOW_SEC = requestWindowSec("btc");
 
@@ -276,7 +293,7 @@ export function btcDepositVerdict(f: BtcDepositFacts, c: RefundConfig, nowSec: n
 
   const stuckAfter = f.confirmedAtSec + STUCK_AFTER_SEC;
   if (nowSec < stuckAfter) return { state: "crediting", stuckAfterSec: stuckAfter };
-  const requestBySec = f.confirmedAtSec + requestWindowSec(f.chain);
+  const requestBySec = requestDeadlineSec(f.chain, f.confirmedAtSec);
   if (nowSec > requestBySec) return { state: "too_old", requestBySec };
   return {
     state: "refundable",

@@ -184,11 +184,13 @@ deposit can neither be credited nor refunded by anyone; only a contract change c
 this tool counted it as credited; it is now its own verdict, `absorbed`. (A below-minimum deposit that no relayer has
 verified yet is still refundable.)
 
-### Request it within 90 days
+### Request it within about 30 days (Zcash, since NU7)
 
 `request_refund` proves the deposit against the bridge's light client for its chain on NEAR, which keeps only its
-newest blocks. `zcash-client.bridge.near` keeps 103,680 Zcash blocks: 90 days at 75 seconds a block (checked
-2026-10-14: `get_mainchain_size` 103,680, and `get_block_hash_by_height` has block 3,413,659 but not 3,413,658).
+newest blocks. `zcash-client.bridge.near` keeps 103,680 Zcash blocks (checked 2026-10-14 and again 2026-11-09:
+`get_mainchain_size` 103,680). Zcash blocks were 75 seconds apart until NU7 (height 3,543,405, 6 Nov 2026) and are 25
+seconds apart since, so those 103,680 blocks now last about 30 days, not 90. A deposit from before NU7 has only the
+blocks it had left, at the new pace: one confirmed on 19 Aug 2026 could be requested only until about 9 Nov 2026.
 Bitcoin's keeps 52,704 blocks, about a year. The tool prints the date to request by, and after it the verdict
 `too_old` with no commands: the request would fail, and the contract takes the 2 NEAR before it checks the proof.
 
