@@ -321,9 +321,9 @@ return the fields that source defines.
 - **The Zcash refund fee is computed, not read.** No view method returns the default refund fee, so the tool
   computes the contract's ZIP-317 formula (10,000 zatoshis). Once a request exists it uses the `gas_fee` stored on
   it. A fee set by the DAO or operator at request time is only visible after the request.
-- **Sapling-only addresses.** The deployed connector cannot refund to a Sapling `zs1…` address, or to a unified
-  address with neither an Orchard nor a transparent receiver, but `request_refund` does not check the address. The
-  tool warns; it cannot stop someone from paying for such a request.
+- **Sapling-only addresses.** The deployed connector cannot refund to a Sapling `zs1…` address (it now refuses one
+  as a refund address) or to a unified address with neither an Orchard nor a transparent receiver. The tool warns;
+  it cannot stop someone from paying for such a request.
 - **Mixed funding.** A deposit funded by transparent inputs and a shielded pool together is reported as such; the
   tool still only suggests a single transparent sender, as for a transparent deposit.
 - **Third-party read APIs.** Blockchair, mempool.space, the Omni bridge indexer and FastNEAR are public, keyless
