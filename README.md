@@ -189,7 +189,7 @@ verified yet is still refundable.)
 `request_refund` proves the deposit against the bridge's light client for its chain on NEAR, which keeps only its
 newest blocks. `zcash-client.bridge.near` keeps 103,680 Zcash blocks (checked 2026-10-14 and again 2026-11-09:
 `get_mainchain_size` 103,680). Zcash blocks were 75 seconds apart until NU7 (height 3,543,405, 6 Nov 2026) and are 25
-seconds apart since, so those 103,680 blocks now last about 30 days, not 90. A deposit from before NU7 has only the
+seconds apart since, so those 103,680 blocks now last about 30 days. A deposit from before NU7 has only the
 blocks it had left, at the new pace: one confirmed on 19 Aug 2026 could be requested only until about 9 Nov 2026.
 Bitcoin's keeps 52,704 blocks, about a year. The tool prints the date to request by, and after it the verdict
 `too_old` with no commands: the request would fail, and the contract takes the 2 NEAR before it checks the proof.
